@@ -3453,6 +3453,79 @@ class OverclockPage(QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 # FAN CURVE PAGE
 # ══════════════════════════════════════════════════════════════════════════════
+class FanWidget(QWidget):
+    """Animated fan icon — spins faster as RPM increases."""
+    def __init__(self, color: str, size: int = 64, parent=None):
+        super().__init__(parent)
+        self._color  = QColor(color)
+        self._dim    = QColor(color)
+        self._dim.setAlphaF(0.25)
+        self._angle  = 0.0
+        self._speed  = 0.0   # degrees per timer tick (60fps)
+        self._rpm    = 0
+        self.setFixedSize(size, size)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(16)   # ~60 fps
+
+    def set_rpm(self, rpm: int):
+        self._rpm = rpm
+        # Map RPM → degrees per frame
+        # 0 RPM = 0 deg/frame,  5000 RPM = 12 deg/frame (2 full rotations/sec)
+        self._speed = min(rpm / 5000 * 12.0, 14.0)
+
+    def _tick(self):
+        if self._speed > 0:
+            self._angle = (self._angle + self._speed) % 360
+            self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        s = self.width()
+        cx, cy, r = s / 2, s / 2, s * 0.44
+
+        p.translate(cx, cy)
+        p.rotate(self._angle)
+
+        # Draw 3 blades, each 120° apart
+        BLADES = 3
+        for i in range(BLADES):
+            p.save()
+            p.rotate(i * (360 / BLADES))
+            # Blade: a rounded ellipse offset from center
+            blade_w = r * 0.52
+            blade_h = r * 0.78
+            grad = __import__('PyQt6.QtGui', fromlist=['QRadialGradient']).QRadialGradient(
+                0, -r * 0.35, r * 0.55)
+            grad.setColorAt(0.0, self._color)
+            grad.setColorAt(1.0, self._dim)
+            p.setBrush(grad)
+            p.setPen(Qt.PenStyle.NoPen)
+            # Offset blade away from center
+            p.translate(r * 0.28, -r * 0.38)
+            p.drawEllipse(
+                int(-blade_w / 2), int(-blade_h / 2),
+                int(blade_w), int(blade_h)
+            )
+            p.restore()
+
+        # Hub circle
+        hub_r = int(r * 0.22)
+        p.setBrush(self._color)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(-hub_r, -hub_r, hub_r * 2, hub_r * 2)
+
+        # Inner hub dot
+        inner = max(2, int(r * 0.08))
+        bg = QColor(C_BG)
+        p.setBrush(bg)
+        p.drawEllipse(-inner, -inner, inner * 2, inner * 2)
+
+        p.end()
+
+
 class FanPage(QWidget):
     _fan_result = pyqtSignal(bool, str)
 
@@ -3488,14 +3561,18 @@ class FanPage(QWidget):
         rc, rl = make_card("Live Fan Speed")
         rpm_row = QHBoxLayout(); rpm_row.setSpacing(48)
         rpm_row.addStretch()
-        for attr, label, color in [
-            ("cpu_rpm_lbl", "CPU Fan", C_BLUE),
-            ("gpu_rpm_lbl", "GPU Fan", C_RED),
+        for attr, fan_attr, label, color in [
+            ("cpu_rpm_lbl", "cpu_fan_widget", "CPU Fan", C_BLUE),
+            ("gpu_rpm_lbl", "gpu_fan_widget", "GPU Fan", C_RED),
         ]:
-            col = QVBoxLayout(); col.setSpacing(4)
-            icon = QLabel("🌀")
-            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon.setStyleSheet("font-size:24px;background:transparent;")
+            col = QVBoxLayout(); col.setSpacing(6)
+            col.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+            fan_w = FanWidget(color, size=64)
+            setattr(self, fan_attr, fan_w)
+            fan_w_wrap = QHBoxLayout()
+            fan_w_wrap.addStretch(); fan_w_wrap.addWidget(fan_w); fan_w_wrap.addStretch()
+
             lbl = QLabel("— RPM")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(
@@ -3504,7 +3581,7 @@ class FanPage(QWidget):
             name.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name.setStyleSheet(f"color:{C_TEXT2};font-size:11px;background:transparent;")
             setattr(self, attr, lbl)
-            col.addWidget(icon); col.addWidget(lbl); col.addWidget(name)
+            col.addLayout(fan_w_wrap); col.addWidget(lbl); col.addWidget(name)
             rpm_row.addLayout(col)
         rpm_row.addStretch()
         rl.addLayout(rpm_row)
@@ -3623,6 +3700,10 @@ class FanPage(QWidget):
 
     def _refresh_rpm(self):
         rpm1, rpm2 = get_fan_rpm()
+        # Update animated fan widgets
+        self.cpu_fan_widget.set_rpm(rpm1)
+        self.gpu_fan_widget.set_rpm(rpm2)
+        # Update labels
         self.cpu_rpm_lbl.setText(f"{rpm1:,}" if rpm1 > 0 else "—")
         self.gpu_rpm_lbl.setText(f"{rpm2:,}" if rpm2 > 0 else "—")
         mode_label = "Full Speed" if self._mode == "full" else "Auto"
