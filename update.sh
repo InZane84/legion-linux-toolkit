@@ -1,145 +1,146 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# Legion Linux Toolkit — Update Script
-# Run from your project root:  sudo bash update.sh
-# Or without sudo (will prompt via pkexec where needed):  bash update.sh
+# Legion Linux Toolkit — Updater
+# Pulls latest changes from GitHub then reinstalls all files.
+# Usage: sudo bash update.sh
 # ══════════════════════════════════════════════════════════════════════════════
-
 set -euo pipefail
 
-# ── Colours ───────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
-
-ok()   { echo -e "  ${GREEN}✓${RESET}  $*"; }
-info() { echo -e "  ${CYAN}→${RESET}  $*"; }
-warn() { echo -e "  ${YELLOW}⚠${RESET}  $*"; }
-fail() { echo -e "  ${RED}✗${RESET}  $*"; exit 1; }
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'
+YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
+ok()   { echo -e "  ${GREEN}✓${NC}  $*"; }
+info() { echo -e "  ${CYAN}→${NC}  $*"; }
+warn() { echo -e "  ${YELLOW}⚠${NC}  $*"; }
+err()  { echo -e "  ${RED}✗${NC}  $*"; exit 1; }
 
 # ── Must run as root ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${BOLD}Legion Toolkit Updater${RESET}"
     echo "Re-running with sudo..."
     exec sudo bash "$0" "$@"
 fi
 
-# ── Project root = directory containing this script ──────────────────────────
+REPO_URL="https://github.com/v4cachy/legion-linux-toolkit"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo -e "\n${BOLD}╔══════════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}║   Legion Linux Toolkit — Updater         ║${RESET}"
-echo -e "${BOLD}╚══════════════════════════════════════════╝${RESET}"
-echo -e "  Project: ${CYAN}${SCRIPT_DIR}${RESET}\n"
 
-# ── Destination paths ─────────────────────────────────────────────────────────
-LIB_DIR="/usr/lib/legion-toolkit"
-BIN_DIR="/usr/local/bin"
-SYSTEMD_DIR="/etc/systemd/system"
-UDEV_DIR="/etc/udev/rules.d"
-POLKIT_DIR="/usr/share/polkit-1/actions"
-AUTOSTART_DIR="/etc/xdg/autostart"
+echo -e "\n${BOLD}╔══════════════════════════════════════════╗"
+echo      "║   Legion Linux Toolkit — Updater         ║"
+echo -e   "╚══════════════════════════════════════════╝${NC}"
+echo -e "  Repo: ${CYAN}${REPO_URL}${NC}\n"
 
-# ── Helper: install file with permission ─────────────────────────────────────
+# ── 1. Pull latest from GitHub ────────────────────────────────────────────────
+echo -e "${BOLD}[1/4] Pulling latest from GitHub…${NC}"
+
+# Check if git is available
+command -v git &>/dev/null || err "git not found — sudo pacman -S git"
+
+if [[ -d "$SCRIPT_DIR/.git" ]]; then
+    # Already a git repo — just pull
+    info "Fetching updates…"
+    cd "$SCRIPT_DIR"
+
+    # Stash any local changes so pull doesn't fail
+    git stash --quiet 2>/dev/null || true
+
+    BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    git pull --ff-only origin main 2>&1 | while IFS= read -r line; do
+        echo -e "     ${CYAN}git${NC}  $line"
+    done
+    AFTER=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
+    if [[ "$BEFORE" == "$AFTER" ]]; then
+        ok "Already up to date — no changes pulled"
+    else
+        # Show what changed
+        echo ""
+        info "Changes pulled:"
+        git log --oneline "${BEFORE}..${AFTER}" 2>/dev/null | while IFS= read -r line; do
+            echo -e "     ${GREEN}•${NC}  $line"
+        done
+        echo ""
+    fi
+else
+    # Not a git repo — clone fresh into a temp dir then copy files over
+    warn "Directory is not a git repo — doing a fresh download…"
+    TMPDIR=$(mktemp -d)
+    trap "rm -rf $TMPDIR" EXIT
+
+    info "Cloning from GitHub…"
+    git clone --depth=1 "$REPO_URL" "$TMPDIR/legion-toolkit" 2>&1 \
+        | grep -v "^$" | while IFS= read -r line; do
+        echo -e "     ${CYAN}git${NC}  $line"
+    done
+
+    # Copy everything from the cloned repo into SCRIPT_DIR
+    info "Copying files to $SCRIPT_DIR…"
+    rsync -a --exclude='.git' "$TMPDIR/legion-toolkit/" "$SCRIPT_DIR/" \
+        || cp -r "$TMPDIR/legion-toolkit/." "$SCRIPT_DIR/"
+    ok "Files updated from GitHub"
+fi
+
+# ── 2. Stop running instances ─────────────────────────────────────────────────
+echo -e "${BOLD}[2/4] Stopping running instances…${NC}"
+pkill -f "legion-tray.py"   2>/dev/null && info "Stopped legion-tray"   || true
+pkill -f "legion-gui.py"    2>/dev/null && info "Stopped legion-gui"    || true
+pkill -f "legion-daemon.py" 2>/dev/null && info "Stopped legion-daemon" || true
+sleep 0.4
+
+# ── 3. Install updated files ──────────────────────────────────────────────────
+echo -e "${BOLD}[3/4] Installing updated files…${NC}"
+
 install_file() {
     local src="$1" dst="$2" mode="${3:-644}"
-    if [[ ! -f "$src" ]]; then
-        warn "Source not found, skipping: $src"
-        return
-    fi
+    if [[ ! -f "$src" ]]; then warn "Not found, skipping: $src"; return; fi
     mkdir -p "$(dirname "$dst")"
     cp "$src" "$dst"
     chmod "$mode" "$dst"
     ok "$(basename "$src")  →  $dst"
 }
 
-# ── 1. Stop running instances ─────────────────────────────────────────────────
-echo -e "${BOLD}[1/5] Stopping running instances…${RESET}"
-pkill -f "legion-tray.py"  2>/dev/null && info "Stopped legion-tray"   || true
-pkill -f "legion-gui.py"   2>/dev/null && info "Stopped legion-gui"    || true
-pkill -f "legion-daemon.py" 2>/dev/null && info "Stopped legion-daemon" || true
-sleep 0.5
+mkdir -p /usr/lib/legion-toolkit
 
-# ── 2. Copy core files ────────────────────────────────────────────────────────
-echo -e "\n${BOLD}[2/5] Installing files…${RESET}"
+install_file "$SCRIPT_DIR/daemon/legion-daemon.py"              /usr/lib/legion-toolkit/legion-daemon.py         755
+install_file "$SCRIPT_DIR/udev/udev-trigger.sh"                 /usr/lib/legion-toolkit/udev-trigger.sh          755
+install_file "$SCRIPT_DIR/tray/legion-gui.py"                   /usr/lib/legion-toolkit/legion-gui.py            755
+install_file "$SCRIPT_DIR/tray/legion-tray.py"                  /usr/lib/legion-toolkit/legion-tray.py           755
+install_file "$SCRIPT_DIR/tray/org.legion-toolkit.policy"       /usr/share/polkit-1/actions/org.legion-toolkit.policy  644
+install_file "$SCRIPT_DIR/tray/legion-toolkit.desktop"          /etc/xdg/autostart/legion-toolkit.desktop        644
+install_file "$SCRIPT_DIR/systemd/legion-toolkit.service"       /etc/systemd/system/legion-toolkit.service       644
 
-mkdir -p "$LIB_DIR"
-
-# Daemon
-install_file "$SCRIPT_DIR/daemon/legion-daemon.py" \
-             "$LIB_DIR/legion-daemon.py" 755
-
-# GUI + Tray
-install_file "$SCRIPT_DIR/tray/legion-gui.py"  "$LIB_DIR/legion-gui.py"  755
-install_file "$SCRIPT_DIR/tray/legion-tray.py" "$LIB_DIR/legion-tray.py" 755
-
-# CLI
 if [[ -f "$SCRIPT_DIR/scripts/legion-ctl" ]]; then
-    install_file "$SCRIPT_DIR/scripts/legion-ctl" "$BIN_DIR/legion-ctl" 755
+    install_file "$SCRIPT_DIR/scripts/legion-ctl" /usr/local/bin/legion-ctl 755
 fi
 
-# Polkit policy
-if [[ -f "$SCRIPT_DIR/tray/org.legion-toolkit.policy" ]]; then
-    install_file "$SCRIPT_DIR/tray/org.legion-toolkit.policy" \
-                 "$POLKIT_DIR/org.legion-toolkit.policy" 644
-fi
-
-# Desktop autostart
-if [[ -f "$SCRIPT_DIR/tray/legion-toolkit.desktop" ]]; then
-    install_file "$SCRIPT_DIR/tray/legion-toolkit.desktop" \
-                 "$AUTOSTART_DIR/legion-toolkit.desktop" 644
-fi
-
-# Udev rules
 if [[ -f "$SCRIPT_DIR/udev/99-legion-toolkit.rules" ]]; then
-    install_file "$SCRIPT_DIR/udev/99-legion-toolkit.rules" \
-                 "$UDEV_DIR/99-legion-toolkit.rules" 644
-fi
-if [[ -f "$SCRIPT_DIR/udev/udev-trigger.sh" ]]; then
-    install_file "$SCRIPT_DIR/udev/udev-trigger.sh" \
-                 "$LIB_DIR/udev-trigger.sh" 755
+    install_file "$SCRIPT_DIR/udev/99-legion-toolkit.rules" /etc/udev/rules.d/99-legion-toolkit.rules 644
+    udevadm control --reload-rules && udevadm trigger
+    ok "udev rules reloaded"
 fi
 
-# ── 3. Reload udev + systemd ──────────────────────────────────────────────────
-echo -e "\n${BOLD}[3/5] Reloading udev rules…${RESET}"
-udevadm control --reload-rules && udevadm trigger
-ok "udev rules reloaded"
+# ── 4. Restart daemon + tray ──────────────────────────────────────────────────
+echo -e "${BOLD}[4/4] Restarting services…${NC}"
 
-echo -e "\n${BOLD}[4/5] Reloading systemd service…${RESET}"
-if [[ -f "$SCRIPT_DIR/systemd/legion-toolkit.service" ]]; then
-    install_file "$SCRIPT_DIR/systemd/legion-toolkit.service" \
-                 "$SYSTEMD_DIR/legion-toolkit.service" 644
-    systemctl daemon-reload
-    systemctl restart legion-toolkit.service && \
-        ok "legion-toolkit.service restarted" || \
-        warn "Service restart failed — check: journalctl -u legion-toolkit.service"
-else
-    # Service file not in project — just restart if it exists
-    if systemctl is-active --quiet legion-toolkit.service; then
-        systemctl restart legion-toolkit.service
-        ok "legion-toolkit.service restarted"
-    fi
+# Reload systemd and restart daemon
+systemctl daemon-reload
+if systemctl is-enabled --quiet legion-toolkit.service 2>/dev/null; then
+    systemctl restart legion-toolkit.service \
+        && ok "legion-toolkit.service restarted" \
+        || warn "Service restart failed — journalctl -u legion-toolkit.service"
 fi
 
-# ── 5. Restart tray (as the current real user, not root) ─────────────────────
-echo -e "\n${BOLD}[5/5] Restarting tray…${RESET}"
-
-# Find the logged-in desktop user
+# Restart tray as the real user (not root)
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "")}"
-
-if [[ -z "$REAL_USER" ]]; then
-    warn "Could not determine desktop user — start tray manually:"
-    echo "    /usr/lib/legion-toolkit/legion-tray.py &"
-else
-    # Run tray as the real user with their environment
+if [[ -n "$REAL_USER" ]]; then
     REAL_UID=$(id -u "$REAL_USER")
     XDGRT="/run/user/${REAL_UID}"
-    WAYLAND_DISP=$(ls "${XDGRT}/wayland-"* 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "wayland-0")
+    WAYLAND_DISP=$(ls "${XDGRT}/wayland-"* 2>/dev/null \
+        | head -1 | xargs basename 2>/dev/null || echo "wayland-0")
 
     sudo -u "$REAL_USER" \
         XDG_RUNTIME_DIR="$XDGRT" \
         WAYLAND_DISPLAY="$WAYLAND_DISP" \
         QT_QPA_PLATFORM="wayland" \
         nohup /usr/lib/legion-toolkit/legion-tray.py \
-        >/tmp/legion-tray.log 2>&1 &
+        > /tmp/legion-tray.log 2>&1 &
 
     sleep 0.8
     if pgrep -f legion-tray.py > /dev/null; then
@@ -147,9 +148,16 @@ else
     else
         warn "Tray may not have started — check /tmp/legion-tray.log"
     fi
+else
+    warn "Could not detect desktop user — start tray manually:"
+    echo -e "     ${CYAN}/usr/lib/legion-toolkit/legion-tray.py &${NC}"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-echo -e "\n${GREEN}${BOLD}✓ Update complete!${RESET}"
-echo -e "  Log: ${CYAN}/tmp/legion-tray.log${RESET}"
-echo -e "  Daemon: ${CYAN}journalctl -fu legion-toolkit.service${RESET}\n"
+echo ""
+echo -e "${GREEN}${BOLD}✓ Update complete!${NC}"
+VER=$(cd "$SCRIPT_DIR" && git describe --tags --always 2>/dev/null \
+    || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+echo -e "  Version : ${CYAN}${VER}${NC}"
+echo    "  Tray log: /tmp/legion-tray.log"
+echo -e "  Daemon  : journalctl -fu legion-toolkit.service\n"
