@@ -19,7 +19,7 @@
 
 ---
 
-## 🖥️ Hardware Target For Testting
+## 🖥️ Hardware Target For Testing
 
 | | |
 |---|---|
