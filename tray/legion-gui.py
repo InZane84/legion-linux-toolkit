@@ -4106,7 +4106,7 @@ class AboutPage(QWidget):
         root = QVBoxLayout(self); root.setContentsMargins(16,16,16,16); root.setSpacing(10)
         card, lay = make_card("About Legion Linux Toolkit")
         for label, value in [
-            ("App","Legion Linux Toolkit"),("Version","0.6.0"),
+            ("App","Legion Linux Toolkit"),("Version","v0.6.1 - BETA 20260320"),
             ("Model","Lenovo Legion 5 15ACH6H"),("CPU","AMD Ryzen 7 5800H"),
             ("OS","CachyOS (Arch-based)"),("Desktop","KDE Plasma 6 (Wayland)"),
             ("Driver","ideapad_acpi + legion (WMI)"),("Fan ctrl","legion_hwmon"),
