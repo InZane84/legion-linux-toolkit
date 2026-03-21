@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# Legion Linux Toolkit — Uninstaller
-# Removes everything that install.sh placed on the system.
+# Legion Linux Toolkit — Uninstaller  v0.6.1-BETA
+# Removes everything install.sh placed on the system.
 # ══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -15,21 +15,21 @@ info() { echo -e "  ${CYAN}→${NC}  $*"; }
 
 echo -e "\n${BOLD}╔══════════════════════════════════════════╗"
 echo      "║   Legion Linux Toolkit — Uninstaller     ║"
+echo      "║              v0.6.1-BETA                 ║"
 echo -e   "╚══════════════════════════════════════════╝${NC}\n"
 
-# Confirm
-read -rp "  This will remove Legion Linux Toolkit completely. Continue? [y/N] " ans
+read -rp "  Remove Legion Linux Toolkit completely? [y/N] " ans
 [[ "${ans,,}" == "y" ]] || { echo "  Cancelled."; exit 0; }
 echo ""
 
 # ── 1. Kill running processes ─────────────────────────────────────────────────
 info "Stopping running instances…"
-pkill -f "legion-tray.py"   2>/dev/null && ok "legion-tray stopped"   || true
-pkill -f "legion-gui.py"    2>/dev/null && ok "legion-gui stopped"    || true
-pkill -f "legion-daemon.py" 2>/dev/null && ok "legion-daemon stopped" || true
-sleep 0.3
+pkill -f "legion-tray.py"    2>/dev/null && ok "legion-tray stopped"    || true
+pkill -f "legion-gui.py"     2>/dev/null && ok "legion-gui stopped"     || true
+pkill -f "legion-daemon.py"  2>/dev/null && ok "legion-daemon stopped"  || true
+sleep 0.4
 
-# ── 2. Disable and remove systemd service ────────────────────────────────────
+# ── 2. Systemd service ────────────────────────────────────────────────────────
 info "Removing systemd service…"
 systemctl stop    legion-toolkit.service  2>/dev/null || true
 systemctl disable legion-toolkit.service  2>/dev/null || true
@@ -37,45 +37,31 @@ rm -f /etc/systemd/system/legion-toolkit.service
 systemctl daemon-reload
 ok "Service removed"
 
-# ── 3. Remove udev rules ──────────────────────────────────────────────────────
+# ── 3. udev rules ─────────────────────────────────────────────────────────────
 info "Removing udev rules…"
 rm -f /etc/udev/rules.d/99-legion-toolkit.rules
-rm -f /etc/udev/rules.d/99-legion-rgb.rules        # RGB udev rule (if added)
+rm -f /etc/udev/rules.d/99-legion-rgb.rules
 udevadm control --reload-rules && udevadm trigger
-ok "udev rules removed and reloaded"
+ok "udev rules removed"
 
-# ── 4. Remove installed files ─────────────────────────────────────────────────
+# ── 4. Installed files ────────────────────────────────────────────────────────
 info "Removing installed files…"
-
-# Main library directory
 rm -rf /usr/lib/legion-toolkit
 ok "/usr/lib/legion-toolkit removed"
-
-# CLI
 rm -f /usr/local/bin/legion-ctl
 ok "legion-ctl removed"
-
-# Polkit policy
 rm -f /usr/share/polkit-1/actions/org.legion-toolkit.policy
 ok "Polkit policy removed"
-
-# Autostart desktop entry
 rm -f /etc/xdg/autostart/legion-toolkit.desktop
 ok "Autostart entry removed"
-
-# Log file
 rm -f /var/log/legion-toolkit.log
-ok "Log file removed"
-
-# Runtime socket (if still present)
 rm -f /run/legion-toolkit.sock
-ok "Runtime socket removed"
+ok "Log and socket removed"
 
-# ── 5. Remove user config (optional) ─────────────────────────────────────────
+# ── 5. User config ────────────────────────────────────────────────────────────
 echo ""
-read -rp "  Remove per-user config (~/.config/legion-toolkit)? [y/N] " ans2
+read -rp "  Remove per-user config and hardware profile? [y/N] " ans2
 if [[ "${ans2,,}" == "y" ]]; then
-    # Remove for all users that have it
     for homedir in /home/*/; do
         cfg="${homedir}.config/legion-toolkit"
         if [[ -d "$cfg" ]]; then
@@ -83,10 +69,12 @@ if [[ "${ans2,,}" == "y" ]]; then
             ok "Removed $cfg"
         fi
     done
-    # Also root
-    [[ -d /root/.config/legion-toolkit ]] && rm -rf /root/.config/legion-toolkit && ok "Removed /root/.config/legion-toolkit"
+    [[ -d /root/.config/legion-toolkit ]] \
+        && rm -rf /root/.config/legion-toolkit \
+        && ok "Removed /root/.config/legion-toolkit"
 else
     warn "User config kept at ~/.config/legion-toolkit"
+    warn "(Includes hardware.json, language.json, overclock.json, actions.json)"
 fi
 
 echo -e "\n${GREEN}${BOLD}✓ Legion Linux Toolkit completely removed.${NC}\n"
