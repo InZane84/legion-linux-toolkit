@@ -5,7 +5,7 @@
 <h1 align="center">Legion Linux Toolkit</h1>
 
 <p align="center">
-  <strong>A native Linux power management dashboard for Lenovo Legion laptops</strong><br/>
+  <strong>A native Linux power management dashboard for Lenovo laptops</strong><br/>
   Built for CachyOS · KDE Plasma 6 · Wayland
 </p>
 
@@ -19,24 +19,25 @@
 
 ---
 
-## 🖥️ Hardware Target
+## 🖥️ Supported Hardware
 
-| | |
-|---|---|
-| **Model** | Lenovo Legion 5 15ACH6H (2021) |
-| **CPU** | AMD Ryzen 7 5800H |
-| **GPU** | NVIDIA RTX 3060 (Laptop) + AMD iGPU |
-| **OS** | CachyOS / Arch Linux |
-| **Desktop** | KDE Plasma 6 — Wayland |
+| Brand | Models | Support Level |
+|-------|--------|---------------|
+| **Legion** | Legion 5, 5 Pro, 7, Slim 5/7 | ✅ Full |
+| **LOQ** | LOQ 15, 16 | ✅ Full |
+| **ThinkPad** | All modern ThinkPad models | ✅ Full + extras |
+| **Yoga** | Yoga 6, 7, 9, Slim series | ✅ Full + extras |
+| **IdeaPad** | IdeaPad 5, Flex, Slim series | ✅ Standard |
+| **ThinkBook** | ThinkBook 14, 16 series | ✅ Standard |
 
-> Other Legion 5/7 models with `ideapad_acpi` should work with minor adjustments.
+> Primary development target: **Lenovo Legion 5 15ACH6H (2021)** — AMD Ryzen 7 5800H · NVIDIA RTX 3060 · CachyOS · KDE Plasma 6 Wayland
 
 ---
 
 ## ✨ Features
 
 ### 🏠 Home
-- ⚡ Power Mode dropdown — Quiet / Balanced / Performance / Custom (also via Fn+Q)
+- ⚡ Power Mode dropdown — Quiet / Balanced / Performance / Custom (also Fn+Q)
 - 🔋 Battery Mode — Normal / Conservation (~60%) / Rapid Charge
 - 🎮 GPU Working Mode — Hybrid / NVIDIA / Integrated (via envycontrol, reboot required)
 - 🔄 G-Sync & Display Overdrive toggles
@@ -44,9 +45,9 @@
 - 📊 Live CPU & GPU stats — utilization, clock, temperature, fan RPM, VRAM
 
 ### 🔋 Battery
-- 📈 Live battery %, voltage, health, charge cycles, power draw
-- ⚙️ Charging mode controls — Conservation, Rapid Charge, USB Charging
-- 🌡️ Live battery temperature (scans all hwmon sources automatically)
+- 📈 Live battery %, voltage, health, charge cycles, power draw, temperature
+- ⚙️ Charging — Conservation (~60%), Rapid Charge, USB Charging, Power Charge Mode
+- 🔧 **ThinkPad only** — Start/Stop charge threshold controls (e.g. 40%–80%)
 
 ### ⚡ Performance
 - 🎛️ CPU governor, AMD boost toggle, EPP selector
@@ -63,22 +64,23 @@
 - 🎨 Per-zone colour pickers + hex input
 - 💡 Quick presets — Legion Red, Ocean, Sunset, Aurora and more
 - 🔆 Keyboard backlight brightness slider
-- ✅ Status feedback — shows applying / applied with tick mark
+- ✅ Live status feedback — shows applying / ✓ applied with tick mark
 
 ### ⚙️ System
 - 🔒 Fn Lock, Super Key, Touchpad, Camera toggles
-- 🎨 Theme selector — Dark / Dark Dimmed / OLED Black
+- 🎨 Theme — Dark / Dark Dimmed / OLED Black
+- 🔄 **Yoga only** — Hinge mode display (Laptop / Tent / Tablet / Stand)
+- 💡 **ThinkPad only** — ThinkLight toggle, Mic Mute LED toggle
 
 ### 🚀 Overclock
-- 🔛 Master OC enable/disable toggle — hides all controls when OFF, applies saved settings when ON
+- 🔛 Master OC enable/disable toggle
 - 🔧 CPU max/min frequency + TDP (PL1/PL2) sliders
 - 🎮 GPU core offset, memory offset, power limit, temp target
 
 ### 🌀 Fan
-- 🎡 **Animated fan icons** — 3-blade spinning widget, speed driven by actual RPM in real time
+- 🎡 Animated fan icons — 3-blade spin widget, speed driven by actual RPM in real time
 - 🌡️ Auto mode — firmware thermal curves (recommended)
 - 💨 Full Speed mode — locks both fans to 100%
-- ℹ️ Fan curves per power profile — change aggressiveness via Power Mode
 
 ### 🎯 Actions
 - 🔁 Auto profile switching on AC connect / battery disconnect
@@ -87,6 +89,14 @@
 - 🔴 Legion Y-blade logo icon with profile colour dot indicator
 - ⚡ Quick profile switching without opening dashboard
 - 🖱️ Left-click opens dashboard, middle-click cycles profiles
+
+---
+
+## 🌍 Languages
+
+The setup wizard lets you choose your language on first launch. Supported:
+
+🇬🇧 English · 🇫🇷 Français · 🇩🇪 Deutsch · 🇪🇸 Español · 🇵🇹 Português · 🇹🇷 Türkçe · 🇷🇺 Русский · 🇨🇳 中文 · 🇯🇵 日本語 · 🇰🇷 한국어 · 🇸🇦 العربية
 
 ---
 
@@ -108,14 +118,17 @@
 - `qt6-wayland` — Wayland support for KDE Plasma 6
 - `libnotify` — desktop notifications
 - `kscreen` — resolution & refresh rate control
+- `git` — for updates via `update.sh`
 
-**Optional — installed automatically by `install.sh`:**
+**Optional — installed automatically based on detected brand:**
 
-| Package | Manager | Feature |
-|---------|---------|---------|
-| `lenovolegionlinux` + `lenovolegionlinux-dkms` | `pacman` | Fan RPM, hardware sysfs, thermalmode, overdrive |
-| `envycontrol` | `paru` | GPU mode switching (Hybrid / NVIDIA / Integrated) |
-| `legionaura` | `yay` | Keyboard RGB colour control |
+| Package | Manager | Brand | Feature |
+|---------|---------|-------|---------|
+| `lenovolegionlinux` + `lenovolegionlinux-dkms` | `pacman` | Legion / LOQ | Fan RPM, hardware sysfs, thermalmode |
+| `envycontrol` | `paru` | Legion / LOQ | GPU mode switching |
+| `legionaura` | `yay` | Legion | Keyboard RGB control |
+| `fprintd` | `pacman` | ThinkPad / Yoga / ThinkBook | Fingerprint reader |
+| `iio-sensor-proxy` | `pacman` | Yoga | Auto screen rotate |
 
 ---
 
@@ -127,7 +140,9 @@ cd legion-linux-toolkit
 sudo bash install.sh
 ```
 
-> The installer automatically detects your hardware, installs all dependencies, enables the systemd daemon and **launches the tray icon** — no logout or manual step needed.
+> The installer **auto-detects your Lenovo brand**, installs only the packages relevant to your device, checks all hardware sysfs paths, enables the daemon service and **launches the tray icon automatically** — no logout needed.
+>
+> On first launch the **setup wizard** appears to choose your language and run a one-time hardware scan.
 
 ---
 
@@ -137,7 +152,7 @@ sudo bash install.sh
 sudo bash update.sh
 ```
 
-Pulls the latest commits from GitHub, reinstalls all files, restarts the daemon and relaunches the tray automatically. Shows exactly which commits were pulled.
+Pulls latest commits from GitHub, shows exactly what changed, reinstalls all files, restarts the daemon and relaunches the tray automatically. Tag-based version shown at the end.
 
 ---
 
@@ -147,46 +162,50 @@ Pulls the latest commits from GitHub, reinstalls all files, restarts the daemon 
 sudo bash uninstall.sh
 ```
 
-Removes every file `install.sh` placed on the system — systemd service, udev rules, polkit policy, autostart entry, CLI and optionally user config.
+Removes every file `install.sh` placed on the system — systemd service, udev rules, polkit policy, autostart entry, CLI binary. Optionally removes per-user config (hardware profile, language, OC settings, actions).
 
 ---
 
-## 🐛 Bug Fixes (v0.6.1 — 20260320)
+## 🆕 What's New (v0.6.1 — 20260320)
 
-- 🔧 Fixed RGB keyboard status stuck on "Applying…" — now shows ✓ Applied
-- 🔧 Fixed Performance profile colour (was pink, now correctly red)
-- 🔧 Fixed GPU Working Mode combo — now uses envycontrol for real switching
+- 🌍 **11-language support** — first-run wizard with language picker
+- 🔍 **One-time hardware detection** — auto-detects brand, model and capabilities, saved to `hardware.json`
+- 🏷️ **Multi-brand support** — Legion, LOQ, ThinkPad, ThinkBook, Yoga, IdeaPad
+- 🔧 **ThinkPad charge thresholds** — start/stop % controls in Battery page
+- 🔄 **Yoga hinge mode** — mode display in System page
+- 💡 **ThinkPad extras** — ThinkLight and Mic Mute LED toggles
+- 🎡 **Animated fan icons** — real-time spinning driven by actual RPM
+- 🏠 **Home page redesigned** — LLT-style two-column Power + Graphics cards
+- 🖥️ **Display page** — separate Resolution and Refresh Rate cards
+- 🚀 **OC master toggle** — enable/disable all OC with one switch
+- 🔴 **Legion Y-blade logo** — tray icon + sidebar + window title bar
+- 🎨 **UI polish** — sidebar logo, brand pill in topbar, styled AC indicator
+- 📦 **install.sh** — brand detection, brand-specific packages, wizard flag reset
+- 🔄 **update.sh** — GitHub pull with commit log, version display
+
+---
+
+## 🐛 Bug Fixes (v0.6.1)
+
+- 🔧 Fixed RGB keyboard status stuck on "Applying…"
+- 🔧 Fixed Performance profile colour (red not pink)
+- 🔧 Fixed GPU mode combo — now uses real envycontrol switching
 - 🔧 Fixed tray icon showing letter circle instead of Legion Y-blade logo
 - 🔧 Fixed `QBrush` NameError crashing tray on startup
-- 🔧 Fixed dashboard not launching — FanPage methods deleted during refactor
+- 🔧 Fixed dashboard not launching after FanPage rewrite
 - 🔧 Fixed battery temperature always showing `—`
 - 🔧 Fixed OC page crash — orphaned variables before class definition
-- 🔧 Fixed VRR toggle snapping back after user interaction
-- 🔧 Removed broken Manual PWM fan controls (not supported by this driver)
-- 🔧 Fixed display brightness not detected in Hybrid mode (`nvidia_wmi_ec_backlight`)
-- 🔧 Fixed install.sh — tray now auto-launches after installation completes
-
----
-
-## 🆕 What's New (v0.6.1)
-
-- 🎡 **Animated fan icons** — real-time spinning widget driven by actual fan RPM
-- 🏠 **Home page redesigned** — LLT-style two-column Power + Graphics cards with dropdowns
-- 🖥️ **Display page** — VRR removed, separate Resolution and Refresh Rate selectors added
-- 🚀 **OC master toggle** — enable/disable all overclock settings with one switch
-- 🎨 **Theme selector** — Dark / Dark Dimmed / OLED Black (replaces accent colour picker)
-- 🌀 **Fan page simplified** — Auto / Full Speed only (manual PWM not available on driver)
-- 🔴 **Legion logo** — Y-blade icon in tray and dashboard title bar
-- 📦 **install.sh** — auto-detects hardware paths, installs all deps, launches tray on completion
-- 🔄 **update.sh** — pulls from GitHub, shows commit log, restarts everything automatically
+- 🔧 Fixed display brightness not detected in Hybrid mode
+- 🔧 Fixed install.sh — tray now auto-launches after install completes
 
 ---
 
 ## ⚠️ Known Limitations
 
-- **Manual fan PWM** — not available on this driver version; fan curves are firmware-managed per power profile
-- **Instant Boot / Flip to Start** — BIOS-only features, not exposed by the Linux driver
+- **Manual fan PWM** — not available on Legion 5 15ACH6H driver; fan curves are firmware-managed per power profile
+- **Instant Boot / Flip to Start** — BIOS-only, not exposed by the Linux driver
 - **Display brightness** — requires a backlight node; auto-detected at runtime
+- **Dolby Audio / Atmos** — Windows driver only, not available on Linux
 
 ---
 
@@ -196,4 +215,4 @@ MIT — free to use, modify and distribute.
 
 ---
 
-<p align="center">Made with ❤️ for Linux on Lenovo Legion</p>
+<p align="center">Made with ❤️ for Linux on Lenovo</p>
