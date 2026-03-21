@@ -32,11 +32,18 @@ command -v git &>/dev/null || err "git not found — sudo pacman -S git"
 
 if [[ -d "$SCRIPT_DIR/.git" ]]; then
     cd "$SCRIPT_DIR"
-    git stash --quiet 2>/dev/null || true
     BEFORE=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-    git pull --ff-only origin main 2>&1 | while IFS= read -r line; do
+
+    info "Fetching latest from GitHub…"
+    git fetch origin 2>&1 | while IFS= read -r line; do
         echo -e "     ${CYAN}git${NC}  $line"
     done
+
+    # Always reset to origin — no conflicts, no merge prompts, ever
+    git reset --hard origin/main 2>/dev/null \
+        || git reset --hard origin/master 2>/dev/null \
+        || warn "Could not reset — check branch name"
+
     AFTER=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
     if [[ "$BEFORE" == "$AFTER" ]]; then
