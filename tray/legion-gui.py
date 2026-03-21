@@ -2384,10 +2384,11 @@ class DisplayPage(QWidget):
         # ── Screen Brightness ─────────────────────────────────────────────────
         bc, bl = make_card("Screen Brightness")
         bl.addWidget(_mk_lbl(
-            "Display backlight brightness via amdgpu driver sysfs.", C_TEXT2, size=11))
+            "Display backlight brightness via sysfs.", C_TEXT2, size=11))
 
-        # Detect backlight path
+        # Detect backlight path — scan known paths + all available
         _bl_paths = [
+            Path("/sys/class/backlight/nvidia_wmi_ec_backlight"),
             Path("/sys/class/backlight/amdgpu_bl0"),
             Path("/sys/class/backlight/amdgpu_bl1"),
             Path("/sys/class/backlight/acpi_video0"),
