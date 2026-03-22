@@ -3962,6 +3962,15 @@ class KeyboardPage(QWidget):
         for n, b in self._effect_btns.items():
             b.setChecked(n == name)
 
+    def cycle_effect(self):
+        """Cycle to the next effect — called by Fn+Space watcher."""
+        order = ["Static","Breath","Wave","Hue","Off"]
+        cur   = self._current_effect if hasattr(self,"_current_effect") else "Static"
+        nxt   = order[(order.index(cur) + 1) % len(order)]
+        self._switch_effect(nxt)
+        # Auto-apply the new effect immediately
+        self._apply()
+
     def _apply_quick_preset(self, cols: list):
         for i in range(4):
             self._set_swatch(self._swatches[i], cols[i])
@@ -5309,6 +5318,8 @@ class LegionDashboard(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(2000)
+        # Start Fn+Space watcher
+        self._start_fnspace_watcher()
 
     def _build(self):
         self.setStyleSheet(
@@ -5390,6 +5401,49 @@ class LegionDashboard(QMainWindow):
         for pg in self.pages: self.stack.addWidget(pg)
         right.addWidget(self.stack); main.addLayout(right)
         self._switch(0)
+
+    def _start_fnspace_watcher(self):
+        """
+        Watch kbd_backlight brightness for changes — fires when Fn+Space is pressed.
+        Fn+Space cycles brightness 0→1→2→0, we intercept and also cycle RGB effect.
+        """
+        from PyQt6.QtCore import QMetaObject
+        self._fnspace_signal = pyqtSignal()
+
+        kbd_path = KBD_BACKLIGHT_PATH
+        if kbd_path is None or not Path(str(kbd_path)).exists():
+            return  # No backlight path — skip
+
+        def _watch():
+            last = None
+            while True:
+                try:
+                    val = Path(str(kbd_path)).read_text().strip()
+                    if last is not None and val != last:
+                        # Brightness changed — Fn+Space was pressed
+                        QMetaObject.invokeMethod(
+                            self, "_on_fnspace",
+                            Qt.ConnectionType.QueuedConnection
+                        )
+                    last = val
+                except: pass
+                time.sleep(0.15)
+
+        threading.Thread(target=_watch, daemon=True).start()
+
+    from PyQt6.QtCore import pyqtSlot
+
+    @pyqtSlot()
+    def _on_fnspace(self):
+        """Called on main thread when Fn+Space is detected."""
+        # Cycle the keyboard effect
+        kb_page = self.pages[4]   # KeyboardPage is index 4
+        if hasattr(kb_page, "cycle_effect"):
+            kb_page.cycle_effect()
+        # If keyboard page is not visible, show a brief notification
+        if self.stack.currentIndex() != 4:
+            cur = getattr(kb_page, "_current_effect", "Static")
+            send_notif("Keyboard RGB", f"Effect → {cur}", "input-keyboard")
 
     def _sync_bat_combo(self, idx: int):
         """Sync Home page battery combo when Battery page toggle changes."""
