@@ -2995,10 +2995,31 @@ class BatteryPage(QWidget):
         ]
         self.charge_toggles = {}
         for i, (title, desc, path, key) in enumerate(rows):
+            # Build on_change callback that syncs the Home combo
+            def _make_cb(k):
+                def _cb(val):
+                    if not self._sync_home_cb: return
+                    if k == "conservation" and val:
+                        self._sync_home_cb(1)   # Conservation
+                        # Turn off Normal toggle visually
+                        self._normal_toggle.setChecked(False, write=False)
+                    elif k == "rapid" and val:
+                        self._sync_home_cb(2)   # Rapid
+                        self._normal_toggle.setChecked(False, write=False)
+                    elif not val:
+                        # Toggled OFF — if neither conservation nor rapid, go Normal
+                        cons = rdsys(CONSERVATION_MODE,"0")
+                        rapid = rdsys(RAPID_CHARGE,"0")
+                        if cons == "0" and rapid == "0":
+                            self._sync_home_cb(0)
+                            self._normal_toggle.setChecked(True, write=False)
+                return _cb
+
             nt = NotifyToggle(title, desc, path,
                               notif_title=title,
                               notif_on="Enabled",
-                              notif_off="Disabled")
+                              notif_off="Disabled",
+                              on_change=_make_cb(key) if key in ("conservation","rapid") else None)
             self.charge_toggles[key] = nt.toggle
             cl.addWidget(nt)
             if i < len(rows)-1: cl.addWidget(make_div())
@@ -3058,24 +3079,19 @@ class BatteryPage(QWidget):
         """
         Called from HomePage when Battery Mode dropdown changes.
         mode: 'normal' | 'conservation' | 'rapid'
-        Updates the charging toggles to match without re-writing sysfs.
+        Updates toggles visually without re-writing sysfs.
         """
         is_normal       = (mode == "normal")
         is_conservation = (mode == "conservation")
         is_rapid        = (mode == "rapid")
 
-        # Update Normal toggle
-        self._normal_toggle._checked = is_normal
-        self._normal_toggle._cx = 22.0 if is_normal else 4.0
-        self._normal_toggle.update()
+        # Update Normal toggle (silent — no write, no callback)
+        self._normal_toggle.setChecked(is_normal, write=False)
 
-        # Update Conservation + Rapid toggles
+        # Update Conservation, Rapid toggles
         for key, state in [("conservation", is_conservation), ("rapid", is_rapid)]:
             if key in self.charge_toggles:
-                tog = self.charge_toggles[key]
-                tog._checked = state
-                tog._cx = 22.0 if state else 4.0
-                tog.update()
+                self.charge_toggles[key].setChecked(state, write=False)
 
     def _apply_tp_thresholds(self):
         start = self._tp_start.value()
