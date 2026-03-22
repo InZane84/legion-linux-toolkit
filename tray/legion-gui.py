@@ -4026,9 +4026,9 @@ class SystemPage(QWidget):
         self.theme_combo = QComboBox()
         self.theme_combo.setStyleSheet(combo_style())
         self.theme_combo.setFixedHeight(36)
-        self.theme_combo.addItems(["Dark (default)", "Dark Dimmed", "OLED Black"])
+        self.theme_combo.addItems(["Dark", "Light"])
         saved_theme = self._app_cfg.get("theme", "dark")
-        theme_idx = {"dark": 0, "dark_dimmed": 1, "oled": 2}.get(saved_theme, 0)
+        theme_idx = {"dark": 0, "light": 1}.get(saved_theme, 0)
         self.theme_combo.setCurrentIndex(theme_idx)
         self.theme_combo.currentIndexChanged.connect(self._on_theme)
         th_row.addWidget(self.theme_combo); th_row.addStretch()
@@ -4105,37 +4105,29 @@ class SystemPage(QWidget):
         threading.Thread(target=_do, daemon=True).start()
 
     def _on_theme(self, idx):
-        """Apply theme immediately by adjusting the main window stylesheet."""
+        """Apply theme immediately — 0=Dark, 1=Light."""
         themes = {
-            0: {"bg":"#1a1a1a","sidebar":"#141414","card":"#242424","card2":"#2c2c2c",
-                "border":"#333333","name":"dark"},
-            1: {"bg":"#1e2128","sidebar":"#161920","card":"#262b35","card2":"#2e3340",
-                "border":"#383e4a","name":"dark_dimmed"},
-            2: {"bg":"#000000","sidebar":"#0a0a0a","card":"#111111","card2":"#181818",
-                "border":"#222222","name":"oled"},
+            0: {"bg":"#1a1a1a","card":"#242424","card2":"#2c2c2c",
+                "border":"#333333","text":"#e0e0e0","name":"dark"},
+            1: {"bg":"#f0f0f0","card":"#ffffff","card2":"#e8e8e8",
+                "border":"#cccccc","text":"#1a1a1a","name":"light"},
         }
         t = themes.get(idx, themes[0])
         self._app_cfg["theme"] = t["name"]
         save_app_config(self._app_cfg)
-        # Apply to the whole application via QApplication stylesheet patch
-        app = QApplication.instance()
-        if app:
-            app.setStyleSheet(
-                f"QMainWindow,QWidget{{background:{t['bg']};}}"
-                f"QScrollArea{{background:transparent;border:none;}}"
-            )
-        # Re-style main window background directly
         win = self.window()
         if win:
             win.setStyleSheet(
                 f"QMainWindow{{background:{t['bg']};}}"
-                f"QToolTip{{background:{t['card2']};color:#e0e0e0;"
+                f"QWidget{{background:{t['bg']};color:{t['text']};}}"
+                f"QScrollArea{{background:transparent;border:none;}}"
+                f"QToolTip{{background:{t['card2']};color:{t['text']};"
                 f"border:1px solid {t['border']};padding:8px;font-size:12px;border-radius:4px;}}"
                 f"QScrollBar:vertical{{background:{t['bg']};width:6px;border-radius:3px;}}"
                 f"QScrollBar::handle:vertical{{background:{t['border']};border-radius:3px;min-height:30px;}}"
                 f"QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}"
             )
-        self._app_status.setText(f"✓ Theme applied")
+        self._app_status.setText("✓ Theme applied")
         QTimer.singleShot(2000, lambda: self._app_status.setText(""))
 
     def refresh(self, d=None): pass
