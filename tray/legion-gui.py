@@ -634,14 +634,47 @@ EPP_LABELS = {"default":"Default","performance":"Performance",
               "balance_performance":"Balance Performance",
               "balance_power":"Balance Power","power":"Power Save"}
 
-C_BG     = "#1a1a1a"
-C_SIDEBAR= "#141414"
-C_CARD   = "#242424"
-C_CARD2  = "#2c2c2c"
-C_BORDER = "#333333"
-C_TEXT   = "#e0e0e0"
-C_TEXT2  = "#888888"
-C_TEXT3  = "#555555"
+_THEMES = {
+    "dark": {
+        "C_BG":     "#1a1a1a",
+        "C_SIDEBAR":"#141414",
+        "C_CARD":   "#242424",
+        "C_CARD2":  "#2c2c2c",
+        "C_BORDER": "#333333",
+        "C_TEXT":   "#e0e0e0",
+        "C_TEXT2":  "#888888",
+        "C_TEXT3":  "#555555",
+    },
+    "light": {
+        "C_BG":     "#f4f4f4",
+        "C_SIDEBAR":"#e4e4e4",
+        "C_CARD":   "#ffffff",
+        "C_CARD2":  "#ebebeb",
+        "C_BORDER": "#cccccc",
+        "C_TEXT":   "#1a1a1a",
+        "C_TEXT2":  "#555555",
+        "C_TEXT3":  "#999999",
+    },
+}
+
+def _load_theme_colours():
+    global C_BG, C_SIDEBAR, C_CARD, C_CARD2, C_BORDER, C_TEXT, C_TEXT2, C_TEXT3
+    try:
+        cfg = json.loads(APP_CFG.read_text()) if APP_CFG.exists() else {}
+        t = _THEMES.get(cfg.get("theme","dark"), _THEMES["dark"])
+    except:
+        t = _THEMES["dark"]
+    C_BG     = t["C_BG"]
+    C_SIDEBAR= t["C_SIDEBAR"]
+    C_CARD   = t["C_CARD"]
+    C_CARD2  = t["C_CARD2"]
+    C_BORDER = t["C_BORDER"]
+    C_TEXT   = t["C_TEXT"]
+    C_TEXT2  = t["C_TEXT2"]
+    C_TEXT3  = t["C_TEXT3"]
+
+_load_theme_colours()
+
 C_ACCENT = "#cc3333"
 C_GREEN  = "#4ecb71"
 C_BLUE   = "#4a9eff"
@@ -4105,30 +4138,19 @@ class SystemPage(QWidget):
         threading.Thread(target=_do, daemon=True).start()
 
     def _on_theme(self, idx):
-        """Apply theme immediately — 0=Dark, 1=Light."""
-        themes = {
-            0: {"bg":"#1a1a1a","card":"#242424","card2":"#2c2c2c",
-                "border":"#333333","text":"#e0e0e0","name":"dark"},
-            1: {"bg":"#f0f0f0","card":"#ffffff","card2":"#e8e8e8",
-                "border":"#cccccc","text":"#1a1a1a","name":"light"},
-        }
-        t = themes.get(idx, themes[0])
-        self._app_cfg["theme"] = t["name"]
+        """Save theme and restart dashboard so all colours rebuild correctly."""
+        name = "dark" if idx == 0 else "light"
+        self._app_cfg["theme"] = name
         save_app_config(self._app_cfg)
+        self._app_status.setText("✓ Restarting to apply theme…")
+        QTimer.singleShot(500, self._restart)
+
+    def _restart(self):
+        """Restart the GUI so all colours rebuild from the saved theme."""
+        import os
         win = self.window()
-        if win:
-            win.setStyleSheet(
-                f"QMainWindow{{background:{t['bg']};}}"
-                f"QWidget{{background:{t['bg']};color:{t['text']};}}"
-                f"QScrollArea{{background:transparent;border:none;}}"
-                f"QToolTip{{background:{t['card2']};color:{t['text']};"
-                f"border:1px solid {t['border']};padding:8px;font-size:12px;border-radius:4px;}}"
-                f"QScrollBar:vertical{{background:{t['bg']};width:6px;border-radius:3px;}}"
-                f"QScrollBar::handle:vertical{{background:{t['border']};border-radius:3px;min-height:30px;}}"
-                f"QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}"
-            )
-        self._app_status.setText("✓ Theme applied")
-        QTimer.singleShot(2000, lambda: self._app_status.setText(""))
+        if win: win.close()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def refresh(self, d=None): pass
 
