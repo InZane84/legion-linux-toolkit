@@ -670,10 +670,11 @@ def rdsys(path, default="0"):
     except: return default
 
 def wrsys(path, value):
-    """Write to sysfs via daemon socket (preferred) or pkexec fallback."""
+    """Write to sysfs — tries daemon socket first, then direct, then pkexec."""
     import socket as _s
     path = str(path)
-    # Method 1: daemon socket (root daemon writes it instantly)
+    value = str(value)
+    # Method 1: daemon socket (root daemon writes with correct permissions)
     try:
         c = _s.socket(_s.AF_UNIX, _s.SOCK_STREAM)
         c.settimeout(2.0)
@@ -681,21 +682,22 @@ def wrsys(path, value):
         c.send(f"write:{path}:{value}\n".encode())
         resp = c.recv(32).decode().strip()
         c.close()
-        if resp == "ok":
-            return
+        if resp == "ok": return
     except Exception:
         pass
-    # Method 2: try direct write (works for LED/backlight owned by user group)
+    # Method 2: direct write (works if user has group permission via udev)
     try:
-        Path(path).write_text(str(value))
+        Path(path).write_text(value + "\n")
         return
     except Exception:
         pass
-    # Method 3: pkexec last resort
+    # Method 3: pkexec fallback
     try:
-        v = str(value).replace("'","").replace(";","").replace("&","")
-        subprocess.Popen(["pkexec","sh","-c",f"printf '%s' '{v}' > {path}"],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        v = value.replace("'","").replace(";","").replace("&","")
+        subprocess.Popen(
+            ["pkexec","sh","-c", f"echo '{v}' > {path}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception:
         pass
 
