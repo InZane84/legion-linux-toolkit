@@ -4313,7 +4313,14 @@ class OverclockPage(QWidget):
             return r
 
         # ── CPU section ────────────────────────────────────────────────────────
-        cc, cl = make_card("CPU — AMD Ryzen 7 5800H")
+        _cpu_label = "CPU"
+        try:
+            for line in Path("/proc/cpuinfo").read_text().splitlines():
+                if "model name" in line.lower():
+                    _cpu_label = "CPU — " + line.split(":")[1].strip()[:40]
+                    break
+        except: pass
+        cc, cl = make_card(_cpu_label)
         cl.addWidget(InfoRow("Hardware Max Turbo", f"{self._hw_max} MHz"))
         cur_pl1, cur_pl2 = get_cpu_tdp()
 
@@ -4390,7 +4397,15 @@ class OverclockPage(QWidget):
         self.cpu_status.setStyleSheet(f"color:{C_GREEN};font-size:11px;background:transparent;")
         cl.addWidget(self.cpu_status)
         oc_root.addWidget(cc)
-        gc, gl = make_card("GPU — NVIDIA RTX 3060 (Laptop)")
+        _gpu_label = "GPU"
+        try:
+            r = subprocess.run(["lspci"], capture_output=True, text=True, timeout=3)
+            for line in r.stdout.splitlines():
+                if "VGA" in line or "3D" in line:
+                    _gpu_label = "GPU — " + line.split(":",2)[-1].strip()[:45]
+                    break
+        except: pass
+        gc, gl = make_card(_gpu_label)
 
         # Requirements note
         req_lbl = QLabel(
@@ -5268,7 +5283,6 @@ class AboutPage(QWidget):
         root = QVBoxLayout(self); root.setContentsMargins(16,16,16,16); root.setSpacing(10)
         card, lay = make_card("About Legion Linux Toolkit")
 
-        # Logo centred at top
         from PyQt6.QtGui import QPixmap as _QP
         import base64 as _b64
         pm = _QP(); pm.loadFromData(_b64.b64decode(_LEGION_ICON_B64))
@@ -5278,18 +5292,66 @@ class AboutPage(QWidget):
         logo.setStyleSheet("background:transparent;padding:8px 0;")
         lay.addWidget(logo)
 
-        brand = HW.get("brand","legion").upper() if HW else "LEGION"
-        model = HW.get("model","Lenovo Legion 5 15ACH6H") if HW else "Lenovo Legion 5 15ACH6H"
+        # ── Read system info dynamically ────────────────────────────────────
+        brand = HW.get("brand", "unknown").upper() if HW else _dmi("product_family").upper() or "LENOVO"
+        model = HW.get("model", _dmi("product_name")) if HW else _dmi("product_name") or "Unknown"
+
+        # CPU — read from /proc/cpuinfo
+        cpu_name = "Unknown"
+        try:
+            for line in Path("/proc/cpuinfo").read_text().splitlines():
+                if "model name" in line.lower():
+                    cpu_name = line.split(":")[1].strip()
+                    break
+        except: pass
+
+        # GPU — read from lspci or sysfs
+        gpu_name = "Unknown"
+        try:
+            r = subprocess.run(["lspci"], capture_output=True, text=True, timeout=3)
+            for line in r.stdout.splitlines():
+                if "VGA" in line or "3D" in line or "Display" in line:
+                    # strip the PCI address prefix
+                    gpu_name = line.split(":", 2)[-1].strip()
+                    if len(gpu_name) > 60: gpu_name = gpu_name[:60] + "…"
+                    break
+        except: pass
+
+        # OS — read from /etc/os-release
+        os_name = "Linux"
+        try:
+            for line in Path("/etc/os-release").read_text().splitlines():
+                if line.startswith("PRETTY_NAME="):
+                    os_name = line.split("=",1)[1].strip().strip('"')
+                    break
+        except: pass
+
+        # Desktop
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "") or \
+                  os.environ.get("DESKTOP_SESSION", "Unknown")
+        wayland = "Wayland" if os.environ.get("WAYLAND_DISPLAY") else "X11"
+        desktop_str = f"{desktop} ({wayland})" if desktop else wayland
+
+        # Driver — check which modules are loaded
+        drivers = []
+        try:
+            mods = subprocess.run(["lsmod"], capture_output=True, text=True, timeout=3).stdout
+            if "ideapad_acpi" in mods:  drivers.append("ideapad_acpi")
+            if "legion_laptop" in mods: drivers.append("legion_laptop")
+            if "thinkpad_acpi" in mods: drivers.append("thinkpad_acpi")
+        except: pass
+        driver_str = " + ".join(drivers) if drivers else "ideapad_acpi"
 
         for label, value in [
             ("App",     "Legion Linux Toolkit"),
             ("Version", "v0.6.1 - BETA 20260320"),
             ("Brand",   brand),
             ("Model",   model),
-            ("OS",      "CachyOS (Arch-based)"),
-            ("Desktop", "KDE Plasma 6 (Wayland)"),
-            ("Driver",  "ideapad_acpi + lenovo_legion_laptop"),
-            ("Fan ctrl","legion_hwmon"),
+            ("CPU",     cpu_name),
+            ("GPU",     gpu_name),
+            ("OS",      os_name),
+            ("Desktop", desktop_str),
+            ("Driver",  driver_str),
             ("Profiles","platform_profile (ACPI)"),
             ("Config",  "~/.config/legion-toolkit/"),
             ("GitHub",  "github.com/v4cachy/legion-linux-toolkit"),
