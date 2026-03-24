@@ -65,10 +65,6 @@
 | 💻 **IdeaPad** | IdeaPad 5, Flex, Slim | ✅ Standard — power, battery, toggles |
 | 📋 **ThinkBook** | ThinkBook 14, 16 | ✅ Standard — power, battery, fingerprint |
 
-> **Primary target:** Lenovo Legion 5 15ACH6H (2021) — AMD Ryzen 7 5800H · NVIDIA RTX 3060 · CachyOS · KDE Plasma 6
-
----
-
 ## ✨ Features
 
 <details>
