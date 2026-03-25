@@ -2906,45 +2906,47 @@ class HomePage(QWidget):
 
     def _on_gpu_mode_combo(self, idx):
         """Apply GPU mode via envycontrol then notify user to reboot."""
-        modes    = ["hybrid", "nvidia", "integrated"]
-        labels   = ["Hybrid (iGPU + dGPU)", "NVIDIA (Discrete)", "Integrated (iGPU only)"]
-        descs    = [
-            "Best battery life — AMD iGPU renders, NVIDIA handles 3D workloads.",
-            "Best performance — NVIDIA GPU drives everything, more power draw.",
-            "Best battery — AMD iGPU only, NVIDIA fully powered off.",
+        modes  = ["hybrid", "nvidia", "integrated"]
+        labels = ["Hybrid (iGPU + dGPU)", "NVIDIA (Discrete only)", "Integrated (iGPU only)"]
+        descs  = [
+            "AMD iGPU renders, NVIDIA handles 3D workloads.",
+            "NVIDIA GPU drives everything — reboot required.",
+            "AMD iGPU only, NVIDIA powered off — reboot required.",
         ]
         mode = modes[idx]
-
-        # Enable/disable G-Sync based on GPU mode
         nvidia_only = (mode == "nvidia")
+
+        # Update G-Sync toggle state
         if hasattr(self, "_gsync_tog"):
             self._gsync_tog.setEnabled(nvidia_only)
             if not nvidia_only:
-                # Turn off G-Sync and write 0 when leaving NVIDIA mode
-                self._gsync_tog.setChecked(False, write=True, silent=True)
+                self._gsync_tog.setChecked(False, write=False, silent=True)
             self._gsync_tog.setToolTip(
-                "G-Sync is only available in NVIDIA-only GPU mode." if not nvidia_only
+                "G-Sync: only available in NVIDIA-only mode." if not nvidia_only
                 else "NVIDIA G-Sync variable refresh rate (requires restart)."
             )
 
         def _do():
             try:
-                r = subprocess.run(
-                    ["pkexec", "envycontrol", "--switch", mode],
-                    capture_output=True, text=True, timeout=30
-                )
-                if r.returncode == 0:
+                # Send to daemon which runs as root
+                import socket as _sk
+                c = _sk.socket(_sk.AF_UNIX, _sk.SOCK_STREAM)
+                c.settimeout(35)
+                c.connect("/run/legion-toolkit.sock")
+                c.send(f"envycontrol:{mode}\n".encode())
+                resp = c.recv(64).decode().strip()
+                c.close()
+                if resp == "ok":
                     send_notif(
                         f"GPU Mode → {labels[idx]}",
-                        f"{descs[idx]}\n\n⚠  Reboot required to apply.",
+                        f"{descs[idx]}\n\n⚠  Reboot to apply.",
                         "display"
                     )
                 else:
-                    err = (r.stderr or r.stdout).strip()[:120]
-                    send_notif("GPU Mode — Error", err or "envycontrol failed", "dialog-error")
+                    send_notif("GPU Mode — Error", resp.replace("err:",""), "dialog-error")
             except FileNotFoundError:
-                send_notif("GPU Mode — Error",
-                           "envycontrol not found. Install: yay -S envycontrol", "dialog-error")
+                send_notif("envycontrol not found",
+                           "Install: yay -S envycontrol", "dialog-error")
             except Exception as e:
                 send_notif("GPU Mode — Error", str(e)[:100], "dialog-error")
 
@@ -3406,6 +3408,12 @@ class DisplayPage(QWidget):
             except Exception:
                 _max_bl = 255; _cur_bl = 128
 
+            # Read actual hardware minimum — nvidia_wmi_ec_backlight supports 0
+            try:
+                _min_bl = int((self._bl_path/"min_brightness").read_text().strip())
+            except:
+                _min_bl = 0   # default to 0, allow full dim
+
             bl.addWidget(_mk_lbl(
                 f"Path: {self._bl_path}/brightness  ·  Max: {_max_bl}", C_TEXT3, size=10))
 
@@ -3416,7 +3424,7 @@ class DisplayPage(QWidget):
             bri_row.addWidget(dim_lbl)
 
             self._screen_sl = QSlider(Qt.Orientation.Horizontal)
-            self._screen_sl.setRange(1, _max_bl)   # never go to 0 — would black out screen
+            self._screen_sl.setRange(_min_bl, _max_bl)  # use hardware min — allows 0
             self._screen_sl.setValue(_cur_bl)
             self._screen_sl.setStyleSheet(
                 f"QSlider::groove:horizontal{{background:{C_BORDER};height:8px;border-radius:4px;}}"
