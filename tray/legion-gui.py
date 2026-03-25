@@ -2805,16 +2805,8 @@ class HomePage(QWidget):
             "Switches GPU mode via envycontrol. Requires reboot to take effect.", self.gpu_mode_combo))
         gl.addWidget(make_div())
 
-        # G-Sync — only NVIDIA-only mode. Force sysfs to 0 if not NVIDIA.
+        # G-Sync — only NVIDIA-only mode. Visual only — never force-write sysfs at build time.
         _nvidia_mode = (_cur_gpu_idx == 1)  # 0=hybrid 1=nvidia 2=integrated
-        if not _nvidia_mode and GSYNC.exists():
-            try: GSYNC.write_text("0\n")
-            except:
-                try:
-                    subprocess.Popen(["pkexec","sh","-c",f"echo 0 > {GSYNC}"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except: pass
-
         self._gsync_tog = ToggleSwitch(
             path=GSYNC,
             read_val="1" if (_nvidia_mode and rdsys(GSYNC,"0") == "1") else "0")
@@ -3473,16 +3465,7 @@ class DisplayPage(QWidget):
         _nvidia_only  = (_gpu_mode_now == "nvidia")
         _vrr_enabled  = not _nvidia_only   # VRR works in Hybrid + Integrated
 
-        # G-Sync — only NVIDIA-only mode
-        # Force sysfs to 0 if not in NVIDIA mode so the toggle shows OFF
-        if not _nvidia_only and GSYNC.exists():
-            try: GSYNC.write_text("0\n")
-            except:
-                try:
-                    subprocess.Popen(["pkexec","sh","-c",f"echo 0 > {GSYNC}"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except: pass
-
+        # G-Sync — only NVIDIA-only mode. Visual only — never force-write sysfs at build time.
         _gsync_nt = NotifyToggle(
             "G-Sync",
             "NVIDIA G-Sync variable refresh rate (requires restart)." if _nvidia_only
