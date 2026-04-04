@@ -2905,13 +2905,12 @@ class HomePage(QWidget):
 
         def _do():
             try:
-                # Send to daemon which runs as root
                 import socket as _sk
                 c = _sk.socket(_sk.AF_UNIX, _sk.SOCK_STREAM)
                 c.settimeout(35)
                 c.connect("/run/legion-toolkit.sock")
                 c.send(f"envycontrol:{mode}\n".encode())
-                resp = c.recv(64).decode().strip()
+                resp = c.recv(256).decode().strip()
                 c.close()
                 if resp == "ok":
                     send_notif(
@@ -2919,11 +2918,37 @@ class HomePage(QWidget):
                         f"{descs[idx]}\n\n⚠  Reboot to apply.",
                         "display"
                     )
+                elif "not found" in resp:
+                    send_notif("envycontrol not found",
+                        "Install it: yay -S envycontrol\nthen run: sudo bash update.sh",
+                        "dialog-error")
                 else:
-                    send_notif("GPU Mode — Error", resp.replace("err:",""), "dialog-error")
-            except FileNotFoundError:
-                send_notif("envycontrol not found",
-                           "Install: yay -S envycontrol", "dialog-error")
+                    send_notif("GPU Mode — Error",
+                        resp.replace("err:","").strip() or "envycontrol failed",
+                        "dialog-error")
+            except ConnectionRefusedError:
+                # Daemon not running — try envycontrol directly via pkexec
+                try:
+                    import shutil
+                    env_bin = shutil.which("envycontrol")
+                    if env_bin:
+                        r = subprocess.run(
+                            ["pkexec", env_bin, "--switch", mode],
+                            capture_output=True, text=True, timeout=30
+                        )
+                        if r.returncode == 0:
+                            send_notif(f"GPU Mode → {labels[idx]}",
+                                f"{descs[idx]}\n\n⚠  Reboot to apply.", "display")
+                        else:
+                            send_notif("GPU Mode — Error",
+                                (r.stderr or r.stdout or "failed").strip()[:120],
+                                "dialog-error")
+                    else:
+                        send_notif("Daemon not running",
+                            "Start it: sudo systemctl start legion-toolkit",
+                            "dialog-error")
+                except Exception as e2:
+                    send_notif("GPU Mode — Error", str(e2)[:100], "dialog-error")
             except Exception as e:
                 send_notif("GPU Mode — Error", str(e)[:100], "dialog-error")
 
