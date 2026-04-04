@@ -357,17 +357,39 @@ class ProfileWatcher:
                     conn.send(b"err:invalid mode\n")
                 else:
                     try:
-                        r = subprocess.run(
-                            ["envycontrol","--switch", mode],
-                            capture_output=True, text=True, timeout=30
-                        )
-                        if r.returncode == 0:
-                            conn.send(b"ok\n")
-                            log.info(f"GPU mode switched to {mode}")
+                        # Find envycontrol — it may be in user PATH not root PATH
+                        import shutil
+                        env_bin = shutil.which("envycontrol") or None
+                        # Common install locations from paru/yay/pip
+                        if not env_bin:
+                            for candidate in [
+                                "/usr/bin/envycontrol",
+                                "/usr/local/bin/envycontrol",
+                                "/home/" + (os.environ.get("SUDO_USER","") or "") + "/.local/bin/envycontrol",
+                                "/opt/envycontrol/envycontrol",
+                            ]:
+                                if os.path.isfile(candidate):
+                                    env_bin = candidate
+                                    break
+                        if not env_bin:
+                            conn.send(b"err:envycontrol not found - install: yay -S envycontrol\n")
                         else:
-                            conn.send(f"err:{r.stderr.strip()[:80]}\n".encode())
+                            log.info(f"Running envycontrol at {env_bin} --switch {mode}")
+                            r = subprocess.run(
+                                [env_bin, "--switch", mode],
+                                capture_output=True, text=True, timeout=30,
+                                env={**os.environ, "PATH": "/usr/local/bin:/usr/bin:/bin"}
+                            )
+                            if r.returncode == 0:
+                                conn.send(b"ok\n")
+                                log.info(f"GPU mode switched to {mode}")
+                            else:
+                                err_msg = (r.stderr or r.stdout or "unknown error").strip()[:120]
+                                conn.send(f"err:{err_msg}\n".encode())
+                                log.warning(f"envycontrol failed: {err_msg}")
                     except Exception as e:
                         conn.send(f"err:{e}\n".encode())
+                        log.error(f"envycontrol exception: {e}")
             elif data.startswith("write:"):
                 # write:path:value
                 parts = data[6:].split(":", 1)
