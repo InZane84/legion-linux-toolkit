@@ -127,26 +127,16 @@ ok "CLI installed"
 
 # ── 7. GUI + tray ─────────────────────────────────────────────────────────────
 echo -e "${BOLD}[6/8] Installing GUI and tray…${NC}"
-# Always install Python scripts (source + daemon reference)
+# Install Python scripts
 install -m 755 "$SCRIPT_DIR/tray/legion-gui.py"  /usr/lib/legion-toolkit/legion-gui.py
 install -m 755 "$SCRIPT_DIR/tray/legion-tray.py" /usr/lib/legion-toolkit/legion-tray.py
-
-if [[ "$BUILD_OK" == true ]]; then
-    install -m 755 "$DIST/legion-gui"  /usr/lib/legion-toolkit/legion-gui
-    install -m 755 "$DIST/legion-tray" /usr/lib/legion-toolkit/legion-tray
-    TRAY_EXEC="/usr/lib/legion-toolkit/legion-tray"
-    TRAY_PGREP="legion-tray"
-    ok "Standalone binaries installed"
-else
-    TRAY_EXEC="/usr/lib/legion-toolkit/legion-tray.py"
-    TRAY_PGREP="legion-tray.py"
-    ok "Python scripts installed"
-fi
+TRAY_EXEC="/usr/lib/legion-toolkit/legion-tray.py"
+TRAY_PGREP="legion-tray.py"
+ok "Python scripts installed"
 
 install -m 644 "$SCRIPT_DIR/tray/org.legion-toolkit.policy" \
     /usr/share/polkit-1/actions/org.legion-toolkit.policy
 
-# Autostart points to correct binary
 cat > /etc/xdg/autostart/legion-toolkit.desktop << EOF
 [Desktop Entry]
 Type=Application
@@ -157,7 +147,7 @@ Terminal=false
 Categories=System;
 X-GNOME-Autostart-enabled=true
 EOF
-ok "Autostart configured → $TRAY_EXEC"
+ok "Autostart configured"
 
 # ── 8. udev + systemd ─────────────────────────────────────────────────────────
 echo -e "${BOLD}[7/8] Installing udev rules and service…${NC}"
@@ -189,8 +179,6 @@ fi
 
 echo -e "\n${GREEN}${BOLD}✓ Installation complete!${NC}"
 echo -e "  Brand : ${CYAN}$BRAND${NC}"
-[[ "$BUILD_OK" == true ]] \
-    && echo "  Mode  : Standalone binaries (lower RAM ✓)" \
-    || echo "  Mode  : Python scripts — run 'bash build.sh' to compile binaries"
-echo "  Update: sudo bash update.sh"
+echo    "  Update: sudo bash update.sh"
+echo    "  Logs:   journalctl -fu legion-toolkit.service"
 echo ""
