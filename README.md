@@ -247,5 +247,4 @@ MIT — free to use, modify and distribute.
 ---
 
 <div align="center">
-  <sub>Made with ❤️ for Linux on Lenovo · <a href="https://github.com/v4cachy/legion-linux-toolkit">github.com/v4cachy/legion-linux-toolkit</a></sub>
-</div>
+  <sub>· Made with ❤️ for Linux on Lenovo ·
