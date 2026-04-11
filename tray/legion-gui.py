@@ -662,11 +662,11 @@ PROFILE_ICONS = {
     "performance":          "🔴",
 }
 PROFILE_DESCS = {
-    "low-power":            "15W · Boost OFF · Silent",
-    "quiet":                "15W · Boost OFF · Silent",
-    "balanced":             "35W · Boost ON · Auto fan",
-    "balanced-performance": "Custom · Balanced-Performance (Pink LED)",
-    "performance":          "54W · Boost ON · Max power",
+    "low-power":            "15W · Boost OFF · EPP: power",
+    "quiet":                "15W · Boost OFF · EPP: power",
+    "balanced":             "35W · Boost ON · EPP: balance_power",
+    "balanced-performance": "Custom · 45W · EPP: balance_performance (Pink LED)",
+    "performance":          "54W · Boost ON · EPP: performance",
 }
 # Colors match the physical LED indicator (fn+Q cycle)
 PROFILE_COLORS = {
