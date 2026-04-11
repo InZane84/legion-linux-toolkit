@@ -651,30 +651,30 @@ PROFILE_LABELS = {
     "low-power":            "Quiet",
     "quiet":                "Quiet",
     "balanced":             "Balanced",
-    "balanced-performance": "Custom",
-    "performance":          "Performance",
+    "balanced-performance": "Performance",
+    "performance":          "Custom",
 }
 PROFILE_ICONS = {
     "low-power":            "🔵",
     "quiet":                "🔵",
     "balanced":             "⚪",
-    "balanced-performance": "🩷",
-    "performance":          "🔴",
+    "balanced-performance": "🔴",
+    "performance":          "🩷",
 }
 PROFILE_DESCS = {
     "low-power":            "15W · Boost OFF · EPP: power",
     "quiet":                "15W · Boost OFF · EPP: power",
     "balanced":             "35W · Boost ON · EPP: balance_power",
-    "balanced-performance": "Custom · 45W · EPP: balance_performance (Pink LED)",
-    "performance":          "54W · Boost ON · EPP: performance",
+    "balanced-performance": "Performance · 45W · EPP: balance_performance (Red LED)",
+    "performance":          "Custom · EPP: balance_performance (Pink LED)",
 }
 # Colors match the physical LED indicator (fn+Q cycle)
 PROFILE_COLORS = {
     "low-power":            "#4a9eff",
     "quiet":                "#4a9eff",
     "balanced":             "#d0d0d0",
-    "balanced-performance": "#ff69b4",
-    "performance":          "#ff4757",
+    "balanced-performance": "#ff4757",
+    "performance":          "#ff69b4",
 }
 
 EPP_VALUES = ["default","performance","balance_performance","balance_power","power"]
