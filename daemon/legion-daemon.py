@@ -123,6 +123,7 @@ PROFILES = {
     "quiet": {
         "governor":     "powersave",
         "boost":        "0",           # AMD boost OFF — confirmed from Windows LLT
+        "epp":          "power",       # lowest power draw
         "rapl_pl1_uw":  15_000_000,    # 15W sustained
         "rapl_pl2_uw":  20_000_000,    # 20W burst
         "fan_mode":     "0",           # auto
@@ -131,6 +132,7 @@ PROFILES = {
     "balanced": {
         "governor":     "powersave",   # powersave + boost=on = schedutil equivalent on AMD
         "boost":        "1",
+        "epp":          "balance_power",  # balanced EPP — NOT balance_performance
         "rapl_pl1_uw":  35_000_000,    # 35W sustained
         "rapl_pl2_uw":  54_000_000,    # 54W burst (5800H max cTDP)
         "fan_mode":     "0",           # auto
@@ -139,14 +141,16 @@ PROFILES = {
     "balanced-performance": {
         "governor":     "performance",
         "boost":        "1",
+        "epp":          "balance_performance",  # custom/pink LED — slightly aggressive
         "rapl_pl1_uw":  45_000_000,    # 45W sustained
         "rapl_pl2_uw":  54_000_000,    # 54W burst
         "fan_mode":     "0",           # auto
-        "description":  "Balanced-Performance — 45W, boost on",
+        "description":  "Custom (Pink LED) — 45W, boost on",
     },
     "performance": {
         "governor":     "performance",
         "boost":        "1",
+        "epp":          "performance",  # max performance
         "rapl_pl1_uw":  54_000_000,    # 54W — full cTDP
         "rapl_pl2_uw":  54_000_000,
         "fan_mode":     "0",           # auto
@@ -244,9 +248,8 @@ def apply_profile(profile_name: str):
     # 4. AMD boost
     write(AMD_BOOST, p["boost"], "AMD boost")
 
-    # 5. Energy performance preference (may not exist on all AMD configs)
-    epp_val = "power" if p["governor"] == "powersave" and p["boost"] == "0" else \
-              "balance_performance" if p["governor"] == "powersave" else "performance"
+    # 5. Energy performance preference — use explicit value from profile dict
+    epp_val = p["epp"]
     write_glob(EPP_GLOB, epp_val, "Energy perf preference")
 
     # 6. RAPL TDP limits — only attempt if writable
