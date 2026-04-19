@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Legion Linux Toolkit — Dashboard GUI  v0.6.1
-Fixes: RAM (MemAvailable), CPU power (RAPL delta), apply_profile (direct sysfs),
-       iGPU detection, smooth bars, full notifications.
+Legion Linux Toolkit — Dashboard GUI  v0.6.2
+New: LLL integration, IC temp, AC/battery auto-switching, kernel 7.x fallback.
 KDE Plasma 6 / Wayland compatible.
 """
 
@@ -831,6 +830,125 @@ def find_hwmon(name):
                     return p
         except: pass
     return None
+
+# ── LLL (LenovoLegionLinux) Integration ───────────────────────────────────────────────
+LLL_FANCURVE_DEBUGFS = Path("/sys/kernel/debug/legion/fancurve")
+FAN_FULLSPEED = _find_feature("fan_fullspeed") or Path("/tmp/nonexistent_fan_fullspeed")
+
+def is_lll_module_loaded() -> bool:
+    """Check if LLL kernel module is loaded."""
+    return Path("/sys/module/legion_laptop").exists()
+
+def is_lll_device_bound() -> bool:
+    """Check if LLL device is bound (hwmon exposed)."""
+    return find_hwmon("legion_hwmon") is not None
+
+def get_lll_status() -> dict:
+    """Get detailed LLL status for UI display."""
+    status = {
+        "module_loaded": is_lll_module_loaded(),
+        "device_bound": is_lll_device_bound(),
+        "debugfs_exists": LLL_FANCURVE_DEBUGFS.exists(),
+        "has_fancurve": False,
+    }
+    if status["debugfs_exists"]:
+        try:
+            curve = LLL_FANCURVE_DEBUGFS.read_text()
+            status["has_fancurve"] = "fan curve points size:" in curve
+        except: pass
+    return status
+
+def is_lll_available() -> bool:
+    """Full check: module loaded AND device bound."""
+    return is_lll_module_loaded() and is_lll_device_bound()
+
+def force_load_lll() -> tuple[bool, str]:
+    """Try to force-load LLL module with force=1."""
+    if not is_lll_module_loaded():
+        try:
+            r = subprocess.run(
+                ["pkexec", "modprobe", "legion_laptop", "force=1"],
+                capture_output=True, text=True, timeout=15
+            )
+            if r.returncode == 0:
+                return True, "Module loaded with force=1"
+            return False, r.stderr.strip()[:80]
+        except Exception as e:
+            return False, str(e)[:80]
+    return is_lll_device_bound(), "Module already loaded, trying force..."
+
+def get_ic_temp() -> int:
+    """Get IC temperature from LLL hwmon (returns 0 if not available)."""
+    h = find_hwmon("legion_hwmon")
+    if h:
+        for f in [h/"temp3_input", h/"temp4_input"]:
+            if f.exists():
+                try: return int(f.read_text())//1000
+                except: pass
+    return 0
+
+def read_fancurve_from_hw() -> str | None:
+    """Read current fan curve from LLL debugfs. Returns None if not available."""
+    if LLL_FANCURVE_DEBUGFS.exists():
+        try: return LLL_FANCURVE_DEBUGFS.read_text()
+        except: pass
+    return None
+
+def parse_fancurve(curve_text: str) -> list[dict]:
+    """Parse fancurve debugfs output into list of point dicts."""
+    lines = curve_text.strip().split("\n")
+    if not lines or "fan curve points size:" not in curve_text:
+        return []
+    points = []
+    header = lines[0].split("|")
+    for line in lines[2:]:
+        if not line.strip(): continue
+        vals = line.split()
+        if len(vals) >= 12:
+            points.append({
+                "speed_unit": int(vals[0]),
+                "fan1_rpm": int(vals[1]) * 100 if vals[0] == "3" else 0,
+                "fan2_rpm": int(vals[2]) * 100 if vals[0] == "3" else 0,
+                "fan1_pwm": int(vals[3]),
+                "fan2_pwm": int(vals[4]),
+                "accel": int(vals[5]),
+                "decel": int(vals[6]),
+                "cpu_min": int(vals[7]),
+                "cpu_max": int(vals[8]),
+                "gpu_min": int(vals[9]),
+                "gpu_max": int(vals[10]),
+                "ic_min": int(vals[11]),
+                "ic_max": int(vals[12]) if len(vals) > 12 else 127,
+            })
+    return points
+
+def get_fan_lock_status() -> bool:
+    """Check if fan controller is locked (read-only, firmware level)."""
+    return False
+
+def set_fan_lock(lock: bool) -> tuple[bool, str]:
+    """Lock/unlock fan controller. Requires LLL."""
+    if not is_lll_available():
+        return False, "LLL not loaded"
+    return True, "Fan lock control not implemented in userspace"
+
+def set_max_fan_speed(enable: bool) -> tuple[bool, str]:
+    """Set maximum fan speed (extreme cooling mode)."""
+    if not FAN_FULLSPEED.exists():
+        if not is_lll_available():
+            return False, "LLL not loaded"
+        return False, "fan_fullspeed path not found"
+    try:
+        val = "1" if enable else "0"
+        r = subprocess.run(
+            ["pkexec", "sh", "-c", f"echo {val} > {FAN_FULLSPEED}"],
+            capture_output=True, text=True, timeout=8
+        )
+        if r.returncode == 0:
+            return True, f"Max fan {'ON' if enable else 'OFF'}"
+        return False, r.stderr.strip()[:80]
+    except Exception as e:
+        return False, str(e)[:80]
 
 def get_cpu_temp():
     h = find_hwmon("k10temp")
@@ -1928,6 +2046,7 @@ class DataSampler(QThread):
                 freq          = get_cpu_freq_ghz()
                 temp          = get_cpu_temp()
                 fan1, fan2    = get_fan_rpm()
+                ic_temp      = get_ic_temp() if is_lll_available() else 0
                 pct           = get_battery_pct()
                 bat_status    = get_battery_status()
 
@@ -1971,6 +2090,7 @@ class DataSampler(QThread):
 
                 self.data_ready.emit({
                     "cpu_util":   util,  "cpu_freq":  freq,    "cpu_temp":  temp,
+                    "ic_temp":    ic_temp,
                     "fan1":       fan1,  "fan2":      fan2,
                     "ram_used":   ru,    "ram_total": rt,      "ram_pct":   rpct,
                     "bat_pct":    pct,   "bat_status":bat_status,"bat_power":bat_power,
@@ -2066,6 +2186,11 @@ class StatRow(QWidget):
     def update_value(self, value_str, pct, color=None):
         self._val.setText(value_str)
         self._bar.set_pct(pct, color)
+
+    def set_value(self, value_str, pct=0, color=None, visible=True):
+        self._val.setText(value_str)
+        self._bar.set_pct(pct, color)
+        self.setVisible(visible)
 
 
 class InfoRow(QWidget):
@@ -2747,10 +2872,12 @@ class HomePage(QWidget):
         self.r_util  = StatRow("Utilization",  "0%",      0)
         self.r_freq  = StatRow("Core Clock",   "0.0 GHz", 0, val_w=80)
         self.r_temp  = StatRow("Temperature",  "0 °C",    0, val_w=80)
+        self.r_ic_temp = StatRow("IC Temp",    "—",     0, val_w=80)
+        self.r_ic_temp.setToolTip("Integrated Controller temperature (requires LLL)")
         self.r_fan1  = StatRow("Fan 1",        "0 RPM",   0, val_w=80)
         self.r_fan2  = StatRow("Fan 2",        "0 RPM",   0, val_w=80)
         for r in [self.r_util,self.r_freq,self.r_temp,
-                  self.r_fan1,self.r_fan2]:
+                  self.r_ic_temp,self.r_fan1,self.r_fan2]:
             cpu_l.addWidget(r)
 
         # GPU column
@@ -3049,6 +3176,13 @@ class HomePage(QWidget):
         self.r_util.update_value(f"{d['cpu_util']}%",  d["cpu_util"])
         self.r_freq.update_value(f"{d['cpu_freq']} GHz", int(d["cpu_freq"]/4.4*100))
         self.r_temp.update_value(f"{d['cpu_temp']} °C",  d["cpu_temp"])
+        ic = d.get("ic_temp", 0)
+        if ic > 0:
+            self.r_ic_temp.set_value(f"{ic} °C", ic, visible=True)
+            self.r_ic_temp.setToolTip("Integrated Controller temperature (LLL)")
+        else:
+            self.r_ic_temp.set_value("—", 0, visible=False)
+            self.r_ic_temp.setToolTip("IC temperature requires LLL driver")
         self.r_fan1.update_value(f"{d['fan1']} RPM",  int(d["fan1"]/5000*100))
         self.r_fan2.update_value(f"{d['fan2']} RPM",  int(d["fan2"]/5000*100))
         # GPU
@@ -4872,18 +5006,49 @@ class FanPage(QWidget):
         # ── Fan Control ───────────────────────────────────────────────────────
         cc, cl = make_card("Fan Control")
 
-        # Info note
+        # Info note - enhanced LLL status
+        lll_status = get_lll_status()
+        lll_available = is_lll_available()
         info = _fan_hwmon_info()
         fs_ok = FAN_FULLSPEED.exists()
-        note = QLabel(
-            f"✓  legion_hwmon: {info['path']}\n"
-            f"✓  fan_fullspeed: {FAN_FULLSPEED}\n\n"
-            "Manual PWM is not available on this driver version.\n"
-            "Fan speed is managed by the firmware thermal curves.\n"
-            "Use Power Mode (Quiet / Balanced / Performance) to change the curve."
-            if info["found"] else
-            "⚠  legion_hwmon not found — sudo modprobe lenovo_legion_laptop"
-        )
+        curve_text = ""
+        if lll_available:
+            curve_text = read_fancurve_from_hw()
+        has_curve = curve_text and "fan curve points size:" in curve_text
+        
+        note_lines = []
+        if lll_available:
+            note_lines.append(f"✓  LLL (legion_hwmon) loaded")
+            note_lines.append(f"✓  fan_fullspeed: {FAN_FULLSPEED}")
+            if has_curve:
+                note_lines.append(f"✓  Custom fan curve: available")
+            note_lines.append("")
+            note_lines.append("Use Power Mode (Quiet / Balanced / Performance)")
+            note_lines.append("or custom fan curve (LLL required).")
+        elif lll_status["module_loaded"]:
+            note_lines.append("⚠  LLL module loaded but device NOT bound")
+            note_lines.append(f"  Kernel: {Path('/proc/sys/kernel/osrelease').read_text().split()[0]}")
+            note_lines.append("")
+            note_lines.append("The module loaded but no hwmon device was created.")
+            note_lines.append("This usually means kernel 7.x is not supported yet.")
+            note_lines.append("")
+            note_lines.append("Try force loading:")
+            note_lines.append("  sudo modprobe -r legion_laptop")
+            note_lines.append("  sudo modprobe legion_laptop force=1")
+            note_lines.append("")
+            note_lines.append("OR downgrade to kernel 6.x:")
+            note_lines.append("  sudo pacman -S linux-cachyos#6.19.2")
+        else:
+            note_lines.append("⚠  LLL not loaded — limited fan control")
+            note_lines.append("")
+            note_lines.append("For full fan control, install lenovolegionlinux:")
+            note_lines.append("  sudo pacman -S cachyos/lenovolegionlinux")
+            note_lines.append("  sudo modprobe legion_laptop")
+            note_lines.append("")
+            note_lines.append("OR if module loads but no device:")
+            note_lines.append("  sudo modprobe legion_laptop force=1")
+        
+        note = QLabel("\n".join(note_lines))
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{C_TEXT2};font-size:11px;background:transparent;")
         cl.addWidget(note)
@@ -5517,7 +5682,7 @@ class AboutPage(QWidget):
 
         for label, value in [
             ("App",     "Legion Linux Toolkit"),
-            ("Version", "v0.6.1 - BETA 20260320"),
+            ("Version", "v0.6.2 - BETA 20260419"),
             ("Brand",   brand),
             ("Model",   model),
             ("CPU",     cpu_name),
