@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Legion Linux Toolkit — Dashboard GUI  v0.6.2
+Legion Linux Toolkit — Dashboard GUI  v0.6.3
 New: LLL integration, IC temp, AC/battery auto-switching, kernel 7.x fallback.
 KDE Plasma 6 / Wayland compatible.
 """
 
 import os, sys, subprocess, json, time, threading
 from pathlib import Path
+from kernel_check import get_fan_status_message
 
 os.environ["QT_QPA_PLATFORM"] = "wayland"
 os.environ["QT_WAYLAND_DISABLE_WINDOWDECORATION"] = "1"
@@ -5094,7 +5095,7 @@ class FanPage(QWidget):
         
         note_lines = []
         if lll_available:
-            note_lines.append(f"✓  LLL (legion_hwmon) loaded")
+            note_lines.append(get_fan_status_message())
             note_lines.append(f"✓  fan_fullspeed: {FAN_FULLSPEED}")
             if has_curve:
                 note_lines.append(f"✓  Custom fan curve: available")
@@ -5758,7 +5759,7 @@ class AboutPage(QWidget):
 
         for label, value in [
             ("App",     "Legion Linux Toolkit"),
-            ("Version", "v0.6.2 - BETA 20260419"),
+            ("Version", "v0.6.3 - BETA 20260419"),
             ("Brand",   brand),
             ("Model",   model),
             ("CPU",     cpu_name),
