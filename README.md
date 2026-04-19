@@ -200,9 +200,8 @@ python-pyqt6   qt6-wayland   libnotify   kscreen   git
 | `fprintd` | `pacman` | ThinkPad / Yoga | Fingerprint |
 | `iio-sensor-proxy` | `pacman` | Yoga | Auto-rotate |
 
-> ⚠️ **Kernel 7.x Notice:** On CachyOS 7.x, `lenovolegionlinux` kernel module may not load automatically.
-> The toolkit handles this gracefully — features that require LLL will show install instructions.
-> See [Known Limitations](#known-limitations) for workaround options.
+> ⚠️ **Kernel Compatibility:** The toolkit automatically detects if LLL works on your kernel.
+> If not supported, it shows a message in the Fan page — auto-updates when LLL adds support.
 
 ---
 
@@ -249,7 +248,7 @@ Removes everything — service, udev rules, polkit, autostart, CLI. Optionally r
 - 📊 **Fan curve status** — displays if custom fan curve is available (when LLL loaded)
 - ⚡ **Daemon auto-switching** — AC/battery power source detection and profile switching
 - 🖥️ **Enhanced fan page** — shows detailed LLL status, kernel compatibility
-- 🐛 **Kernel 7.x fallback** — graceful handling when LLL doesn't support kernel 7.x
+- 🤖 **Automatic kernel check** — auto-detects if LLL works on your kernel, no manual updates needed
 
 ---
 
