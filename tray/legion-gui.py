@@ -428,29 +428,88 @@ def save_language(lang: str):
 # ══════════════════════════════════════════════════════════════════════════════
 # HARDWARE DETECTION
 # ══════════════════════════════════════════════════════════════════════════════
+HARDWARE_CACHE_TTL = 3600  # Cache for 1 hour
+
 def _dmi(field: str) -> str:
     try: return Path(f"/sys/class/dmi/id/{field}").read_text().strip().lower()
     except: return ""
 
-def detect_hardware() -> dict:
+def _read_file(path: str, default: str = "") -> str:
+    """Safely read a file, return default on error."""
+    try: return Path(path).read_text().strip()
+    except: return default
+
+def _which(cmd: str) -> bool:
+    """Check if command exists in PATH."""
+    return Path(cmd).exists() or subprocess.run(["which", cmd], capture_output=True).returncode == 0
+
+def _exists_quiet(paths: list) -> bool:
+    """Check if any path exists."""
+    return any(Path(p).exists() for p in paths)
+
+# Legion model mapping for better detection
+LEGION_MODELS = {
+    "82ju": "Legion 5 15ACH6H",
+    "82gu": "Legion 5 15ACH5",
+    "82ms": "Legion 7 16ACHg6",
+    "82rh": "Legion 5 Pro 16ARH7",
+    "82sr": "Legion 5 Pro 16",
+    "82ts": "Legion 7 16",
+    "82wm": "Legion Slim 7",
+}
+
+def detect_hardware(force: bool = False) -> dict:
     """
     Detect Lenovo brand, model and hardware capabilities.
-    Returns a capability dict saved to HARDWARE_CFG.
+    Add force=True to bypass cache and re-detect.
     """
+    # Check cache first
+    if not force:
+        cached = load_hardware()
+        if cached:
+            import time
+            cached_time = cached.get("_detected_at", 0)
+            if time.time() - cached_time < HARDWARE_CACHE_TTL:
+                return cached
+
     vendor      = _dmi("sys_vendor")
     product     = _dmi("product_name")
     family      = _dmi("product_family")
     chassis     = _dmi("chassis_type")
 
-    # ── Brand detection ───────────────────────────────────────────────────────
+    # ── Enhanced brand detection ──────────────────────────────────────────
     full = f"{product} {family}".lower()
-    if any(k in full for k in ["legion"]):        brand = "legion"
-    elif "loq" in full:                           brand = "loq"
-    elif "thinkpad" in full:                      brand = "thinkpad"
-    elif "thinkbook" in full:                     brand = "thinkbook"
-    elif "yoga" in full:                          brand = "yoga"
-    elif any(k in full for k in ["ideapad","idea pad","flex","slim"]): brand = "ideapad"
-    else:                                          brand = "ideapad"
+    
+    # Legion detection with model codes
+    if "legion" in full:
+        brand = "legion"
+        # Try to get detailed model name
+        product_code = product[:4] if product else ""
+        if product_code in LEGION_MODELS:
+            model_detail = LEGION_MODELS[product_code]
+        else:
+            # Try to extract model from product name
+            import re
+            match = re.search(r'(legion\s+\d+|loq\s+\d+)', full, re.IGNORECASE)
+            model_detail = match.group(0).title() if match else product.title()
+    elif "loq" in full:
+        brand = "loq"
+        model_detail = product.title() if product else "LOQ"
+    elif "thinkpad" in full:
+        brand = "thinkpad"
+        model_detail = product.title() if product else "ThinkPad"
+    elif "thinkbook" in full:
+        brand = "thinkbook"
+        model_detail = product.title() if product else "ThinkBook"
+    elif "yoga" in full:
+        brand = "yoga"
+        model_detail = product.title() if product else "Yoga"
+    elif any(k in full for k in ["ideapad", "idea pad", "flex", "slim"]):
+        brand = "ideapad"
+        model_detail = product.title() if product else "IdeaPad"
+    else:
+        brand = "lenovo" if "lenovo" in vendor else "unknown"
+        model_detail = product.title() if product else "Unknown"
 
     # ── CPU vendor detection ──────────────────────────────────────────────────
     cpu_vendor = "unknown"
@@ -465,16 +524,33 @@ def detect_hardware() -> dict:
                 cpu_name = line.split(":")[1].strip()
     except: pass
 
-    # ── GPU detection — AMD, NVIDIA, Intel Arc ────────────────────────────────
+    # ── GPU detection — Optimized ───────────────────────────────────────────
     has_nvidia = False
     has_amd_gpu = False
     has_intel_gpu = False
+    
+    # Try lspci first (most reliable)
     try:
         lspci = subprocess.run(["lspci"], capture_output=True, text=True, timeout=3).stdout.lower()
-        has_nvidia    = "nvidia" in lspci
-        has_amd_gpu   = any(k in lspci for k in ["amd","radeon","amdgpu"])
-        has_intel_gpu = any(k in lspci for k in ["intel","arc","xe"])
-    except: pass
+        has_nvidia = "nvidia" in lspci
+        has_amd_gpu = any(k in lspci for k in ["amd", "radeon", "amdgpu"])
+        has_intel_gpu = any(k in lspci for k in ["intel", "arc", "xe"])
+    except:
+        # Fallback: check sysfs
+        nvidia_sysfs = Path("/sys/bus/pci/drivers/nvidia")
+        has_nvidia = nvidia_sysfs.exists()
+        
+        amd_gpu_sysfs = Path("/sys/class/drm")
+        if amd_gpu_sysfs.exists():
+            for card in amd_gpu_sysfs.glob("card*/device/vendor"):
+                try:
+                    vendor = card.read_text().strip().lower()
+                    if "1002" in vendor:  # AMD vendor ID
+                        has_amd_gpu = True
+                    elif "8086" in vendor:  # Intel vendor ID
+                        has_intel_gpu = True
+                except:
+                    pass
 
     # ── Intel-specific paths ─────────────────────────────────────────────────
     # Intel TurboBoost
@@ -556,11 +632,9 @@ def detect_hardware() -> dict:
         "als_sensor": bool(list(Path("/sys/bus/iio/devices").glob("*/in_illuminance_raw"))
                            if Path("/sys/bus/iio/devices").exists() else []),
 
-        # Tools
-        "legionaura":  bool(subprocess.run(["which","legionaura"],
-                            capture_output=True).returncode == 0),
-        "envycontrol": bool(subprocess.run(["which","envycontrol"],
-                            capture_output=True).returncode == 0),
+        # Tools (cached check)
+        "legionaura": _which("legionaura"),
+        "envycontrol": _which("envycontrol"),
 
         # Misc
         "fingerprint": has_fingerprint,
@@ -577,7 +651,9 @@ def load_hardware() -> dict:
     return {}
 
 def save_hardware(cap: dict):
+    import time
     try:
+        cap["_detected_at"] = int(time.time())
         HARDWARE_CFG.parent.mkdir(parents=True, exist_ok=True)
         HARDWARE_CFG.write_text(json.dumps(cap, indent=2))
     except: pass
