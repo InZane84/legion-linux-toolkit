@@ -5,8 +5,8 @@
   <p>Developed on CachyOS · KDE Plasma 6 · Wayland — works on any Arch-based distro</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-v0.6.1--BETA-red?style=flat-square"/>
-    <img src="https://img.shields.io/badge/build-20260320-orange?style=flat-square"/>
+    <img src="https://img.shields.io/badge/version-v0.6.2--BETA-red?style=flat-square"/>
+    <img src="https://img.shields.io/badge/build-20260419-orange?style=flat-square"/>
     <img src="https://img.shields.io/badge/platform-Linux-blue?style=flat-square"/>
     <img src="https://img.shields.io/badge/desktop-KDE%20Plasma%206-purple?style=flat-square"/>
     <img src="https://img.shields.io/badge/python-PyQt6-green?style=flat-square"/>
@@ -81,7 +81,8 @@
 - 🎮 GPU Working Mode — Hybrid / NVIDIA / Integrated (via envycontrol)
 - 🔄 G-Sync & Display Overdrive toggles
 - 🔌 Always on USB & Fn Lock toggles
-- 📊 Live CPU & GPU stats — utilization, clock, temp, fan RPM, VRAM
+- 📊 Live CPU, GPU & IC stats — utilization, clock, temp, fan RPM, VRAM
+- 🌡️ **IC Temperature** — Integrated Controller temp (when LLL loaded)
 
 </details>
 
@@ -130,6 +131,9 @@
 - 🎡 Animated fan icons — real-time spin driven by actual RPM
 - 🌡️ Auto mode — firmware thermal curves
 - 💨 Full Speed mode — locks both fans to 100%
+- 📊 **LLL status** — shows if LenovoLegionLinux driver is loaded
+- ⚡ **Fan curve info** — displays custom curve availability (when LLL loaded)
+- 🔌 **Kernel 7.x handling** — graceful fallback on newer kernels
 - 🌀 **ThinkPad only** — Fan level dropdown (0–7, Auto, Disengaged)
 
 </details>
@@ -175,11 +179,15 @@ python-pyqt6   qt6-wayland   libnotify   kscreen   git
 
 | Package | Manager | Brand | Feature |
 |---------|---------|-------|---------|
-| `lenovolegionlinux` + `lenovolegionlinux-dkms` | `pacman` | Legion / LOQ | Fan RPM, sysfs paths |
+| `lenovolegionlinux` + `lenovolegionlinux-dkms` | `pacman` | Legion / LOQ | Fan RPM, IC temp, custom fan curve |
 | `envycontrol` | `paru` | Legion / LOQ | GPU mode switching |
 | `legionaura` | `yay` | Legion | Keyboard RGB |
 | `fprintd` | `pacman` | ThinkPad / Yoga | Fingerprint |
 | `iio-sensor-proxy` | `pacman` | Yoga | Auto-rotate |
+
+> ⚠️ **Kernel 7.x Notice:** On CachyOS 7.x, `lenovolegionlinux` kernel module may not load automatically.
+> The toolkit handles this gracefully — features that require LLL will show install instructions.
+> See [Known Limitations](#known-limitations) for workaround options.
 
 ---
 
@@ -217,6 +225,17 @@ Removes everything — service, udev rules, polkit, autostart, CLI. Optionally r
 
 ---
 
+## 🆕 What's New (v0.6.2 — 20260419)
+
+- 🔌 **LLL (LenovoLegionLinux) Integration** — detects `legion_hwmon` when loaded
+- 🌡️ **IC Temperature display** — shows Integrated Controller temp (when LLL loaded)
+- 📊 **Fan curve status** — displays if custom fan curve is available (when LLL loaded)
+- ⚡ **Daemon auto-switching** — AC/battery power source detection and profile switching
+- 🖥️ **Enhanced fan page** — shows detailed LLL status, kernel compatibility
+- 🐛 **Kernel 7.x fallback** — graceful handling when LLL doesn't support kernel 7.x
+
+---
+
 ## 🆕 What's New (v0.6.1 — 20260320)
 
 - 🌍 11-language first-run wizard + one-time hardware detection
@@ -232,7 +251,7 @@ Removes everything — service, udev rules, polkit, autostart, CLI. Optionally r
 ---
 
 ## ⚠️ Known Limitations
-
+- Kernel 7.x + LLL — Some features require `lenovolegionlinux` kernel module which may not support kernel 7.x yet. The toolkit shows status messages when this occurs.
 - Manual fan PWM — not available on Legion driver (firmware-managed)
 - Instant Boot / Flip to Start — BIOS only
 - Dolby Audio / Atmos — Windows driver only
