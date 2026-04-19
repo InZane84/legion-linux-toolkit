@@ -136,6 +136,7 @@ ok "CLI installed → /usr/local/bin/legion-ctl"
 echo -e "${BOLD}[7/8] Installing GUI and tray…${NC}"
 install -m 755 "$SCRIPT_DIR/tray/legion-gui.py"  /usr/lib/legion-toolkit/legion-gui.py
 install -m 755 "$SCRIPT_DIR/tray/legion-tray.py" /usr/lib/legion-toolkit/legion-tray.py
+install -m 644 "$SCRIPT_DIR/tray/kernel_check.py" /usr/lib/legion-toolkit/kernel_check.py
 install -m 644 "$SCRIPT_DIR/tray/org.legion-toolkit.policy" \
     /usr/share/polkit-1/actions/org.legion-toolkit.policy
 ok "GUI and tray installed"
