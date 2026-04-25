@@ -248,6 +248,7 @@ Removes everything — service, udev rules, polkit, autostart, CLI. Optionally r
 - 🐛 Fixed nvidia_wmi_ec_backlight reference removed from G-Sync
 - 💡 **Fixed Brightness Backlight** — now uses correct path (`/sys/class/backlight/`)
 - 🎛️ **Added Manual button** for 10-point fan curve editor in Fan page
+- 🪟 **Fan curve editor opens in new window** — click Manual button to open
 - 🎮 Added .gitignore
 
 ---
