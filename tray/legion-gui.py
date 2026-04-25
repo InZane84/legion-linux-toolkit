@@ -5372,6 +5372,20 @@ class FanPage(QWidget):
         self._auto_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._auto_btn.clicked.connect(lambda: self._set_mode("auto"))
 
+        self._manual_btn = QPushButton("🎛️  Manual (10pt)")
+        self._manual_btn.setCheckable(True); self._manual_btn.setChecked(False)
+        self._manual_btn.setFixedHeight(48)
+        self._manual_btn.setStyleSheet(
+            f"QPushButton{{background:{C_CARD2};color:{C_TEXT2};"
+            f"border:1px solid {C_BORDER};border-radius:8px;"
+            f"font-size:12px;font-weight:bold;}}"
+            f"QPushButton:checked{{background:transparent;color:{C_ORANGE};"
+            f"border:2px solid {C_ORANGE};}}"
+            f"QPushButton:hover:!checked{{border:1px solid #555;color:{C_TEXT};}}"
+        )
+        self._manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._manual_btn.clicked.connect(lambda: self._set_mode("manual"))
+
         self._full_btn = QPushButton("🌀  Full Speed")
         self._full_btn.setCheckable(True); self._full_btn.setChecked(False)
         self._full_btn.setFixedHeight(48)
@@ -5418,7 +5432,8 @@ class FanPage(QWidget):
         self._minifan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._minifan_btn.clicked.connect(lambda: self._apply_minifan(self._minifan_btn.isChecked()))
 
-        btn_row.addWidget(self._auto_btn); btn_row.addWidget(self._full_btn)
+        btn_row.addWidget(self._auto_btn); btn_row.addWidget(self._manual_btn)
+        btn_row.addWidget(self._full_btn)
         btn_row.addWidget(self._lockfan_btn); btn_row.addWidget(self._minifan_btn)
         cl.addLayout(btn_row)
 
@@ -5727,10 +5742,13 @@ class FanPage(QWidget):
     def _set_mode(self, mode: str):
         self._mode = mode
         self._auto_btn.setChecked(mode == "auto")
+        self._manual_btn.setChecked(mode == "manual")
         self._full_btn.setChecked(mode == "full")
         self._mode_desc.setText(
             "Firmware controls fans based on CPU/GPU temperature. Recommended."
             if mode == "auto" else
+            "Manual 10-point fan curve editor. Set your custom fan curve below."
+            if mode == "manual" else
             "Both fans locked to 100% — maximum cooling, louder."
         )
         
@@ -5744,6 +5762,8 @@ class FanPage(QWidget):
             if mode == "auto":
                 ok, msg = _write_fan_auto()
                 self._emit(ok, "✓  Auto fan control active" if ok else f"✗  {msg}")
+            elif mode == "manual":
+                self._emit(True, "✓  Manual mode — use fan curve editor below")
             else:
                 ok, msg = _write_fan_fullspeed(True)
                 self._emit(ok, "✓  Full speed active" if ok else f"✗  {msg}")
@@ -5757,7 +5777,7 @@ class FanPage(QWidget):
         # Update labels
         self.cpu_rpm_lbl.setText(f"{rpm1:,}" if rpm1 > 0 else "—")
         self.gpu_rpm_lbl.setText(f"{rpm2:,}" if rpm2 > 0 else "—")
-        mode_label = "Full Speed" if self._mode == "full" else "Auto"
+        mode_label = "Full Speed" if self._mode == "full" else "Manual" if self._mode == "manual" else "Auto"
         self.fan_mode_badge.setText(f"Mode: {mode_label}")
         for lbl, rpm, base_col in [
             (self.cpu_rpm_lbl, rpm1, C_BLUE),
