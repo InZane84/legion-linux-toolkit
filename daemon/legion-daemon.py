@@ -249,8 +249,8 @@ def apply_profile(profile_name: str):
     log.info(f"   {p['description']}")
     log.info(f"")
 
-    # 1. Platform profile (tells firmware + LLL)
-    write(PLATFORM_PROFILE, profile_name, "platform_profile")
+    # Platform profile is now handled by LLL's legiond - don't overwrite
+    # write(PLATFORM_PROFILE, profile_name, "platform_profile")
 
     # 2. Restore CPU max freq first (clears any previous cap)
     restore_max_freq()
@@ -272,8 +272,8 @@ def apply_profile(profile_name: str):
     else:
         log.info(f"  ⏭ TDP skipped (install ryzen_smu-dkms-git to enable)")
 
-    # 7. Fan mode via ideapad_acpi
-    write(FAN_MODE, p["fan_mode"], "Fan mode")
+    # Fan mode is now handled by LLL's legiond - don't overwrite
+    # write(FAN_MODE, p["fan_mode"], "Fan mode")
 
     # 8. Status summary
     log.info(f"")

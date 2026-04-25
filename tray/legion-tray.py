@@ -49,7 +49,8 @@ TOUCHPAD          = LEGION_BASE  / "touchpad"
 RAPID_CHARGE      = LEGION_BASE  / "rapidcharge"
 WINKEY            = LEGION_BASE  / "winkey"
 OVERDRIVE         = LEGION_BASE  / "overdrive"
-GSYNC             = LEGION_BASE  / "gsync"
+GSYNC             = Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00/gsync")
+NVIDIA_BACKLIGHT = Path("/sys/class/leds/nvidia_wmi_ec_backlight/brightness")
 POWER_CHARGE_MODE = LEGION_BASE  / "powerchargemode"
 THERMAL_MODE      = LEGION_BASE  / "thermalmode"
 FAN_FULLSPEED     = LEGION_BASE  / "fan_fullspeed"
@@ -298,10 +299,18 @@ class LegionTray:
             ("🖥️   Display Overdrive  ●" if od_val    == "1" else "🖥️   Display Overdrive  ○"), m)
         self._gsync_action = QAction(
             ("🔄  G-Sync  ●"            if gsync_val == "1" else "🔄  G-Sync  ○"), m)
-        self._od_action.triggered.connect(self._toggle_overdrive)
         self._gsync_action.triggered.connect(self._toggle_gsync)
         m.addAction(self._od_action)
         m.addAction(self._gsync_action)
+
+        # Brightness Backlight (nvidia_wmi_ec_backlight)
+        if NVIDIA_BACKLIGHT.exists():
+            bl_val = rd(NVIDIA_BACKLIGHT)
+            self._bl_action = QAction(
+                ("💡  Brightness Backlight  ●" if bl_val == "1" else "💡  Brightness Backlight  ○"), m)
+            self._bl_action.triggered.connect(self._toggle_backlight)
+            m.addAction(self._bl_action)
+            m.addSeparator()
         m.addSeparator()
 
         # ── System section ────────────────────────────────────────────────
@@ -451,6 +460,11 @@ class LegionTray:
         self._tog(GSYNC, self._gsync_action,
                   "🔄  G-Sync  ●", "🔄  G-Sync  ○",
                   "G-Sync ON", "G-Sync OFF")
+
+    def _toggle_backlight(self):
+        self._tog(NVIDIA_BACKLIGHT, self._bl_action,
+                  "💡  Brightness Backlight  ●", "💡  Brightness Backlight  ○",
+                  "Backlight ON", "Backlight OFF")
 
     def _toggle_fn(self):
         self._tog(FN_LOCK, self._fn_action,

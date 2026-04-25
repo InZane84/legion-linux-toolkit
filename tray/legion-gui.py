@@ -135,6 +135,20 @@ IDEAPAD_BASE      = (lambda: next(
 ) if Path("/sys/bus/platform/drivers/ideapad_acpi").exists()
   else Path("/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00"))()
 
+# LEGION_SYS_BASEPATH — find LLL device path
+def _find_legion_base() -> Path:
+    base = Path("/sys/module/legion_laptop/drivers/platform:legion")
+    if base.exists():
+        for d in base.iterdir():
+            if d.name.startswith("PNP0C09") and (d / "hwmon").exists():
+                return d
+    return Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00")
+
+LEGION_SYS_BASEPATH = _find_legion_base()
+
+# G-Sync — use direct path that exists on Legion laptops
+_GSYNC_PATH = Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00/gsync")
+
 CONSERVATION_MODE = _find_ideapad("conservation_mode") or IDEAPAD_BASE / "conservation_mode"
 CAMERA_POWER      = _find_ideapad("camera_power")      or IDEAPAD_BASE / "camera_power"
 FN_LOCK           = _find_ideapad("fn_lock")            or IDEAPAD_BASE / "fn_lock"
@@ -144,7 +158,8 @@ TOUCHPAD          = _find_feature("touchpad")           or Path("/sys/bus/platfo
 RAPID_CHARGE      = _find_feature("rapidcharge")        or Path("/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/rapidcharge")
 WINKEY            = _find_feature("winkey")             or Path("/tmp/nonexistent_winkey")
 OVERDRIVE         = _find_feature("overdrive")          or Path("/tmp/nonexistent_overdrive")
-GSYNC             = _find_feature("gsync")              or Path("/tmp/nonexistent_gsync")
+GSYNC             = Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00/gsync")
+NVIDIA_BACKLIGHT = Path("/sys/class/leds/nvidia_wmi_ec_backlight/brightness")
 POWER_CHARGE_MODE = _find_feature("powerchargemode")    or Path("/tmp/nonexistent_pcm")
 THERMAL_MODE      = _find_feature("thermalmode")        or Path("/tmp/nonexistent_thermalmode")
 FAN_FULLSPEED     = _find_feature("fan_fullspeed")      or Path("/tmp/nonexistent_fan_fullspeed")
@@ -155,6 +170,40 @@ LEGION_BASE = (lambda: next(
      if (p / "fan_fullspeed").exists() or (p / "overdrive").exists()),
     Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00")
 ))()
+
+# G-Sync — direct path to gsync sysfs node
+_GSYNC_PATH = Path("/sys/devices/pci0000:00/0000:00:14.3/PNP0C09:00/gsync")
+
+def get_gsync_status() -> bool:
+    """Check if G-Sync (hybrid mode) is enabled."""
+    if _GSYNC_PATH.exists():
+        try:
+            return _GSYNC_PATH.read_text().strip() == "1"
+        except:
+            pass
+    return False
+
+def set_gsync(enable: bool) -> tuple[bool, str]:
+    """Enable/disable G-Sync."""
+    if _GSYNC_PATH.exists():
+        try:
+            subprocess.run(["pkexec", "sh", "-c", f"echo {'1' if enable else '0'} > {_GSYNC_PATH}"],
+                        capture_output=True, timeout=5)
+            return True, f"G-Sync {'enabled' if enable else 'disabled'}"
+        except Exception as e:
+            return False, str(e)[:80]
+    return False, "G-Sync not available on this system"
+
+def get_gpu_hybrid_status() -> bool:
+    """Check if GPU is in hybrid mode (switchable graphics)."""
+    try:
+        r = subprocess.run(["which", "envycontrol"], capture_output=True)
+        if r.returncode != 0:
+            return False
+        r = subprocess.run(["envycontrol", "query"], capture_output=True, text=True)
+        return "hybrid" in r.stdout.lower()
+    except:
+        return False
 
 # ── Flip to Start / Instant Boot ─────────────────────────────────────────────
 def _find_sysfs_feature(names: list) -> "Path | None":
@@ -168,6 +217,7 @@ INSTANT_BOOT  = _find_sysfs_feature(["instant_boot","instantboot","instant_on","
 BAT               = Path("/sys/class/power_supply/BAT0")
 ACTIONS_CFG       = Path.home() / ".config/legion-toolkit/actions.json"
 OC_CFG            = Path.home() / ".config/legion-toolkit/overclock.json"
+CFG_DIR         = Path.home() / ".config/legion-toolkit"
 FAN_CFG           = Path.home() / ".config/legion-toolkit/fan.json"
 APP_CFG           = Path.home() / ".config/legion-toolkit/appearance.json"
 HARDWARE_CFG      = Path.home() / ".config/legion-toolkit/hardware.json"
@@ -602,6 +652,7 @@ def detect_hardware(force: bool = False) -> dict:
         # Display
         "overdrive":  OVERDRIVE.exists(),
         "gsync":      GSYNC.exists(),
+        "nw_backlight": NVIDIA_BACKLIGHT.exists(),
 
         # Input
         "fn_lock":      FN_LOCK.exists(),
@@ -613,9 +664,13 @@ def detect_hardware(force: bool = False) -> dict:
         # Fan
         "fan_fullspeed": FAN_FULLSPEED.exists(),
         "thermalmode":   THERMAL_MODE.exists(),
+        "lockfancontroller": ex(LEGION_SYS_BASEPATH / "lockfancontroller"),
+        "minifancurve":    ex(LEGION_SYS_BASEPATH / "minifancurve"),
 
         # Backlight
         "kbd_backlight":    ex("/sys/class/leds/platform::kbd_backlight/brightness"),
+        "ylogo":         ex("/sys/class/leds/platform::ylogo/brightness"),
+        "ioport":        ex("/sys/class/leds/platform::ioport/brightness"),
         "screen_backlight": bool(list(Path("/sys/class/backlight").iterdir())
                                  if Path("/sys/class/backlight").exists() else []),
 
@@ -971,6 +1026,65 @@ def read_fancurve_from_hw() -> str | None:
         except: pass
     return None
 
+def write_fancurve_to_hw(points: list[dict]) -> tuple[bool, str]:
+    """Write fan curve points to LLL hwmon. Each point: {fan1_pwm, fan2_pwm, cpu_temp, gpu_temp, ic_temp, accel, decel}"""
+    hwmon = _fan_hwmon()
+    if not hwmon:
+        return False, "LLL hwmon not found"
+    
+    try:
+        for i, pt in enumerate(points, 1):
+            if i > 10:
+                break
+            base = f"pwm{1 if i <= 3 else 2}_auto_point{i}_"
+            
+            # Write PWM values (fan speed)
+            if "fan1_pwm" in pt:
+                subprocess.run(["pkexec", "sh", "-c", f"echo {pt['fan1_pwm']} > {hwmon/base}pwm"],
+                             capture_output=True, timeout=2)
+            if "fan2_pwm" in pt:
+                other = "pwm2_auto_point" if i <= 3 else "pwm1_auto_point"
+                idx = i if i <= 3 else i - 3
+                subprocess.run(["pkexec", "sh", "-c", f"echo {pt['fan2_pwm']} > {hwmon}{other}{idx}_pwm"],
+                             capture_output=True, timeout=2)
+            
+            # Write temperature thresholds
+            if "cpu_temp" in pt:
+                subprocess.run(["pkexec", "sh", "-c", f"echo {pt['cpu_temp']} > {hwmon/base}temp"],
+                             capture_output=True, timeout=2)
+            
+            # Write acceleration/deceleration
+            if "accel" in pt:
+                subprocess.run(["pkexec", "sh", "-c", f"echo {pt['accel']} > {hwmon/base}accel"],
+                             capture_output=True, timeout=2)
+            if "decel" in pt:
+                subprocess.run(["pkexec", "sh", "-c", f"echo {pt['decel']} > {hwmon/base}decel"],
+                             capture_output=True, timeout=2)
+        
+        return True, f"Wrote {len(points)} fan curve points"
+    except Exception as e:
+        return False, str(e)[:80]
+
+def save_fancurve_to_file(points: list[dict], filename: str) -> bool:
+    """Save fan curve to JSON file."""
+    try:
+        CFG_DIR.mkdir(parents=True, exist_ok=True)
+        path = CFG_DIR / f"fancurve_{filename}.json"
+        path.write_text(json.dumps(points, indent=2))
+        return True
+    except:
+        return False
+
+def load_fancurve_from_file(filename: str) -> list[dict] | None:
+    """Load fan curve from JSON file."""
+    try:
+        path = CFG_DIR / f"fancurve_{filename}.json"
+        if path.exists():
+            return json.loads(path.read_text())
+    except:
+        pass
+    return None
+
 def parse_fancurve(curve_text: str) -> list[dict]:
     """Parse fancurve debugfs output into list of point dicts."""
     lines = curve_text.strip().split("\n")
@@ -1001,13 +1115,61 @@ def parse_fancurve(curve_text: str) -> list[dict]:
 
 def get_fan_lock_status() -> bool:
     """Check if fan controller is locked (read-only, firmware level)."""
-    return False
+    lock_path = LEGION_SYS_BASEPATH / "lockfancontroller"
+    if not lock_path.exists():
+        return False
+    try:
+        return lock_path.read_text().strip() == "1"
+    except:
+        return False
 
 def set_fan_lock(lock: bool) -> tuple[bool, str]:
     """Lock/unlock fan controller. Requires LLL."""
-    if not is_lll_available():
-        return False, "LLL not loaded"
-    return True, "Fan lock control not implemented in userspace"
+    lock_path = LEGION_SYS_BASEPATH / "lockfancontroller"
+    if not lock_path.exists():
+        if not is_lll_available():
+            return False, "LLL not loaded"
+        return False, "lockfancontroller not found"
+    try:
+        val = "1" if lock else "0"
+        r = subprocess.run(
+            ["pkexec", "sh", "-c", f"echo {val} > {lock_path}"],
+            capture_output=True, text=True, timeout=8
+        )
+        if r.returncode == 0:
+            return True, f"Fan controller {'locked' if lock else 'unlocked'}"
+        return False, r.stderr.strip()[:80]
+    except Exception as e:
+        return False, str(e)[:80]
+
+def get_minifancurve_status() -> bool:
+    """Check if mini fan curve (cold) is enabled."""
+    mini_path = LEGION_SYS_BASEPATH / "minifancurve"
+    if not mini_path.exists():
+        return False
+    try:
+        return mini_path.read_text().strip() == "1"
+    except:
+        return False
+
+def set_minifancurve(enable: bool) -> tuple[bool, str]:
+    """Enable/disable mini fan curve when cold. Requires LLL."""
+    mini_path = LEGION_SYS_BASEPATH / "minifancurve"
+    if not mini_path.exists():
+        if not is_lll_available():
+            return False, "LLL not loaded"
+        return False, "minifancurve not found"
+    try:
+        val = "1" if enable else "0"
+        r = subprocess.run(
+            ["pkexec", "sh", "-c", f"echo {val} > {mini_path}"],
+            capture_output=True, text=True, timeout=8
+        )
+        if r.returncode == 0:
+            return True, f"Mini fan curve {'enabled' if enable else 'disabled'}"
+        return False, r.stderr.strip()[:80]
+    except Exception as e:
+        return False, str(e)[:80]
 
 def set_max_fan_speed(enable: bool) -> tuple[bool, str]:
     """Set maximum fan speed (extreme cooling mode)."""
@@ -1632,6 +1794,62 @@ def get_kbd_brightness() -> int:
 def get_kbd_max_brightness() -> int:
     try: return int(_KBD_BRI_MAX.read_text().strip()) if _KBD_BRI_MAX.exists() else 2
     except: return 2
+
+# ── Y-Logo and IO-Port LED (via LLL) ─────────────────────────────────────────
+_YLOGO_PATH = Path("/sys/class/leds/platform::ylogo/brightness")
+_IOPORT_PATH = Path("/sys/class/leds/platform::ioport/brightness")
+
+def set_ylogo_brightness(brightness: int) -> tuple[bool, str]:
+    """Set Y-logo LED brightness (0-2 or 0-100 depending on model). Requires LLL."""
+    if not _YLOGO_PATH.exists():
+        return False, "Y-logo LED not found"
+    try:
+        _YLOGO_PATH.write_text(str(brightness) + "\n")
+        return True, f"Y-logo brightness: {brightness}"
+    except PermissionError:
+        try:
+            subprocess.run(["pkexec", "sh", "-c", f"echo {brightness} > {_YLOGO_PATH}"],
+                         capture_output=True, timeout=5)
+            return True, f"Y-logo brightness: {brightness}"
+        except Exception as e:
+            return False, str(e)[:80]
+    except Exception as e:
+        return False, str(e)[:80]
+
+def get_ylogo_brightness() -> int:
+    """Get current Y-logo LED brightness."""
+    if not _YLOGO_PATH.exists():
+        return 0
+    try:
+        return int(_YLOGO_PATH.read_text().strip())
+    except:
+        return 0
+
+def set_ioport_brightness(brightness: int) -> tuple[bool, str]:
+    """Set IO-Port LED brightness. Requires LLL."""
+    if not _IOPORT_PATH.exists():
+        return False, "IO-Port LED not found"
+    try:
+        _IOPORT_PATH.write_text(str(brightness) + "\n")
+        return True, f"IO-Port brightness: {brightness}"
+    except PermissionError:
+        try:
+            subprocess.run(["pkexec", "sh", "-c", f"echo {brightness} > {_IOPORT_PATH}"],
+                         capture_output=True, timeout=5)
+            return True, f"IO-Port brightness: {brightness}"
+        except Exception as e:
+            return False, str(e)[:80]
+    except Exception as e:
+        return False, str(e)[:80]
+
+def get_ioport_brightness() -> int:
+    """Get current IO-Port LED brightness."""
+    if not _IOPORT_PATH.exists():
+        return 0
+    try:
+        return int(_IOPORT_PATH.read_text().strip())
+    except:
+        return 0
 
 def run_legionaura(args: list, callback=None):
     """Run legionaura CLI in a background thread. callback(ok, msg) when done."""
@@ -2550,6 +2768,7 @@ class FirstRunWizard(QDialog):
         if cap.get("envycontrol"):      feats.append("GPU Mode Switching")
         if cap.get("overdrive"):        feats.append("Display Overdrive")
         if cap.get("gsync"):            feats.append("G-Sync")
+        if cap.get("nw_backlight"):    feats.append("Brightness Backlight")
 
         summary = f"Brand: {brand}\nModel: {model}\n\nDetected features:\n"
         summary += "\n".join(f"  ✓  {f}" for f in feats) if feats else "  — No special features detected"
@@ -2584,6 +2803,7 @@ class FirstRunWizard(QDialog):
         if cap.get("envycontrol"):      feats.append("GPU Mode Switching")
         if cap.get("overdrive"):        feats.append("Display Overdrive")
         if cap.get("gsync"):            feats.append("G-Sync")
+        if cap.get("nw_backlight"):    feats.append("Brightness Backlight")
         if cap.get("tp_thinklight"):    feats.append("ThinkLight")
         if cap.get("tp_micmute_led"):   feats.append("Mic Mute LED")
         if cap.get("als_sensor"):       feats.append("Ambient Light Sensor")
@@ -3096,15 +3316,15 @@ class HomePage(QWidget):
             "Switches GPU mode via envycontrol. Requires reboot to take effect.", self.gpu_mode_combo))
         gl.addWidget(make_div())
 
-        # G-Sync — always available via nvidia_wmi_ec_backlight
-        _nvidia_mode = (_cur_gpu_idx == 1)
-        self._gsync_tog = ToggleSwitch(path=GSYNC, read_val=rdsys(GSYNC,"0"))
-        self._gsync_tog.setToolTip(
-            "NVIDIA G-Sync via nvidia_wmi_ec_backlight.\nAlso enables full backlight dimming to 0.")
-        _gsync_row = _setting_row("🔄", "G-Sync",
-            "NVIDIA G-Sync variable refresh rate (requires restart).",
-            self._gsync_tog)
-        gl.addWidget(_gsync_row)
+        # G-Sync Toggle — via ToggleSwitch with notification
+        _gsync_enabled = get_gsync_status()
+        _gsync_tog = ToggleSwitch(path=GSYNC, read_val=rdsys(GSYNC,"0"),
+                               on_change=lambda val: send_notif(
+                                   "G-Sync",
+                                   f"G-Sync {'enabled' if val else 'disabled'} — {'variable' if val else 'fixed'} refresh rate",
+                                   "display"))
+        gl.addWidget(_setting_row("🔄", "G-Sync",
+            "NVIDIA G-Sync variable refresh rate. Enable for smoother gaming.", _gsync_tog))
         gl.addWidget(make_div())
 
         # Display Overdrive toggle
@@ -3112,6 +3332,13 @@ class HomePage(QWidget):
         gl.addWidget(_setting_row("🖥️", "Display Overdrive",
             "Reduce display response time latency.", od_tog))
         gl.addWidget(make_div())
+
+        # Brightness Backlight toggle (nvidia_wmi_ec_backlight)
+        if NVIDIA_BACKLIGHT.exists():
+            bl_tog = ToggleSwitch(path=NVIDIA_BACKLIGHT, read_val=rdsys(NVIDIA_BACKLIGHT,"0"))
+            gl.addWidget(_setting_row("💡", "Brightness Backlight",
+                "Control display backlight via nvidia_wmi_ec_backlight.", bl_tog))
+            gl.addWidget(make_div())
 
         # Overclock GPU row — button to navigate to OC page
         oc_btn = QPushButton("Open OC →")
@@ -3759,13 +3986,22 @@ class DisplayPage(QWidget):
                                   OVERDRIVE, notif_title="Display Overdrive"))
         dl.addWidget(make_div())
 
-        # G-Sync — always available, managed by nvidia_wmi_ec_backlight
+        # G-Sync — via Legion sysfs node
         _gsync_nt = NotifyToggle(
             "G-Sync",
-            "NVIDIA G-Sync via nvidia_wmi_ec_backlight. Also controls backlight dimming to 0.",
+            "NVIDIA G-Sync variable refresh rate. Enable for smoother gaming.",
             GSYNC,
             notif_title="G-Sync")
         dl.addWidget(_gsync_nt)
+
+        # Brightness Backlight
+        if NVIDIA_BACKLIGHT.exists():
+            _bl_nt = NotifyToggle(
+                "Brightness Backlight",
+                "Control display backlight via nvidia_wmi_ec_backlight.",
+                NVIDIA_BACKLIGHT,
+                notif_title="Brightness Backlight")
+            dl.addWidget(_bl_nt)
         root.addWidget(dc)
 
         # ── Resolution ────────────────────────────────────────────────────────
@@ -5162,7 +5398,40 @@ class FanPage(QWidget):
         self._full_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._full_btn.clicked.connect(lambda: self._set_mode("full"))
 
+        # Lock Fan Controller button
+        lock_enabled = get_fan_lock_status()
+        self._lockfan_btn = QPushButton("🔒  Lock")
+        self._lockfan_btn.setCheckable(True)
+        self._lockfan_btn.setChecked(lock_enabled)
+        self._lockfan_btn.setFixedHeight(48)
+        self._lockfan_btn.setStyleSheet(
+            f"QPushButton{{background:{C_CARD2};color:{C_TEXT2};"
+            f"border:1px solid {C_BORDER};border-radius:8px;"
+            f"font-size:13px;font-weight:bold;}}"
+            f"QPushButton:checked{{background:{C_RED};color:{C_BG};}}"
+            f"QPushButton:hover:!checked{{border:1px solid {C_RED};}}"
+        )
+        self._lockfan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._lockfan_btn.clicked.connect(lambda: self._apply_lockfan(self._lockfan_btn.isChecked()))
+
+        # Mini Fan Curve button
+        mini_enabled = get_minifancurve_status()
+        self._minifan_btn = QPushButton("🌡️  Mini")
+        self._minifan_btn.setCheckable(True)
+        self._minifan_btn.setChecked(mini_enabled)
+        self._minifan_btn.setFixedHeight(48)
+        self._minifan_btn.setStyleSheet(
+            f"QPushButton{{background:{C_CARD2};color:{C_TEXT2};"
+            f"border:1px solid {C_BORDER};border-radius:8px;"
+            f"font-size:13px;font-weight:bold;}}"
+            f"QPushButton:checked{{background:{C_GREEN};color:{C_BG};}}"
+            f"QPushButton:hover:!checked{{border:1px solid {C_GREEN};}}"
+        )
+        self._minifan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._minifan_btn.clicked.connect(lambda: self._apply_minifan(self._minifan_btn.isChecked()))
+
         btn_row.addWidget(self._auto_btn); btn_row.addWidget(self._full_btn)
+        btn_row.addWidget(self._lockfan_btn); btn_row.addWidget(self._minifan_btn)
         cl.addLayout(btn_row)
 
         self._mode_desc = QLabel(
@@ -5177,6 +5446,124 @@ class FanPage(QWidget):
         self._status.setStyleSheet(
             f"color:{C_GREEN};font-size:11px;background:transparent;")
         cl.addWidget(self._status)
+        
+        # ── 10-Point Fan Curve Editor ──────────────────────────────────────────────────
+        if has_curve and lll_available:
+            fce, fcel = make_card("🎛️  Custom Fan Curve Editor")
+            
+            # Instructions
+            fcel.addWidget(_mk_lbl(
+                "Edit each point: temperature (°C) where fan speed changes.\n"
+                "PWM = fan speed (0-255), Accel/Decel = speed change rate.",
+                C_TEXT2, size=11))
+            
+            # Create table for 10 points
+            curve_scroll = QScrollArea()
+            curve_scroll.setWidgetResizable(True)
+            curve_scroll.setFixedHeight(280)
+            
+            curve_widget = QWidget()
+            curve_layout = QVBoxLayout()
+            
+            # Headers
+            header = QLabel("Pt | CPU Temp | Fan1 PWM | Fan2 PWM | Accel | Decel")
+            header.setStyleSheet(f"color:{C_ACCENT};font-weight:bold;font-size:11px;")
+            curve_layout.addWidget(header)
+            
+            # Parse current curve
+            current_points = parse_fancurve(curve_text) if curve_text else []
+            
+            # Create 10 input rows
+            self._curve_points = []
+            for i in range(10):
+                row = QHBoxLayout()
+                
+                # Point label
+                lbl = QLabel(f"{i+1}")
+                lbl.setFixedWidth(25)
+                row.addWidget(lbl)
+                
+                # CPU Temp (threshold to switch to this fan speed)
+                temp_spin = QSpinBox()
+                temp_spin.setRange(30, 95)
+                temp_spin.setValue(current_points[i].get("cpu_max", 50) if i < len(current_points) else 40 + i*5)
+                temp_spin.setFixedWidth(60)
+                row.addWidget(QLabel("°C")); row.addWidget(temp_spin)
+                row.addStretch()
+                
+                # Fan1 PWM
+                pwm1_spin = QSpinBox()
+                pwm1_spin.setRange(0, 255)
+                pwm1_spin.setValue(current_points[i].get("fan1_pwm", 50 + i*20) if i < len(current_points) else min(255, 50 + i*20))
+                pwm1_spin.setFixedWidth(60)
+                row.addWidget(QLabel("F1")); row.addWidget(pwm1_spin)
+                row.addStretch()
+                
+                # Fan2 PWM  
+                pwm2_spin = QSpinBox()
+                pwm2_spin.setRange(0, 255)
+                pwm2_spin.setValue(current_points[i].get("fan2_pwm", 50 + i*20) if i < len(current_points) else min(255, 50 + i*20))
+                pwm2_spin.setFixedWidth(60)
+                row.addWidget(QLabel("F2")); row.addWidget(pwm2_spin)
+                row.addStretch()
+                
+                # Accel
+                accel_spin = QSpinBox()
+                accel_spin.setRange(1, 10)
+                accel_spin.setValue(current_points[i].get("accel", 5) if i < len(current_points) else 5)
+                accel_spin.setFixedWidth(45)
+                row.addWidget(QLabel("Acc")); row.addWidget(accel_spin)
+                
+                # Decel
+                decel_spin = QSpinBox()
+                decel_spin.setRange(1, 10)
+                decel_spin.setValue(current_points[i].get("decel", 5) if i < len(current_points) else 5)
+                decel_spin.setFixedWidth(45)
+                row.addWidget(QLabel("Dec")); row.addWidget(decel_spin)
+                
+                self._curve_points.append({
+                    "temp": temp_spin,
+                    "pwm1": pwm1_spin,
+                    "pwm2": pwm2_spin,
+                    "accel": accel_spin,
+                    "decel": decel_spin,
+                })
+                curve_layout.addLayout(row)
+            
+            # Buttons for save/load/apply
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(8)
+            
+            apply_btn = QPushButton("💾  Apply to Hardware")
+            apply_btn.setStyleSheet(f"background:{C_ACCENT};color:{C_BG};border-radius:6px;padding:8px;")
+            apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            apply_btn.clicked.connect(self._apply_fan_curve_editor)
+            btn_row.addWidget(apply_btn)
+            
+            save_preset_btn = QPushButton("💾  Save Preset")
+            save_preset_btn.setStyleSheet(f"background:{C_CARD2};color:{C_TEXT};border:1px solid {C_BORDER};border-radius:6px;padding:8px;")
+            save_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            save_preset_btn.clicked.connect(lambda: self._save_fan_preset("custom"))
+            btn_row.addWidget(save_preset_btn)
+            
+            load_preset_btn = QPushButton("📂  Load Preset")
+            load_preset_btn.setStyleSheet(f"background:{C_CARD2};color:{C_TEXT};border:1px solid {C_BORDER};border-radius:6px;padding:8px;")
+            load_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            load_preset_btn.clicked.connect(lambda: self._load_fan_preset("custom"))
+            btn_row.addWidget(load_preset_btn)
+            
+            curve_layout.addLayout(btn_row)
+            curve_widget.setLayout(curve_layout)
+            curve_scroll.setWidget(curve_widget)
+            fcel.addWidget(curve_scroll)
+            
+            # Store reference to hide/show based on fan mode
+            self._fancurve_editor = fce
+            self._fancurve_editor.setVisible(False)  # Hidden by default (use Auto mode)
+            
+            root.addWidget(fce)
+            root.addWidget(make_div())
+
         root.addWidget(cc)
 
         # ── Info card ─────────────────────────────────────────────────────────
@@ -5251,6 +5638,86 @@ class FanPage(QWidget):
         root.addStretch()
         self._refresh_rpm()
 
+    def _apply_gsync(self, enable: bool):
+        """Apply G-Sync/Hybrid mode toggle."""
+        ok, msg = set_gsync(enable)
+        if ok:
+            self._gsync_btn.setText("🔄  G-Sync  ✓" if enable else "🔄  G-Sync  ○")
+            send_notif("G-Sync", msg, "display")
+        else:
+            send_notif("G-Sync Error", msg, "dialog-error")
+
+    def _apply_lockfan(self, lock: bool):
+        """Apply fan lock toggle."""
+        ok, msg = set_fan_lock(lock)
+        if ok:
+            send_notif("Fan Controller", msg, "computer")
+        else:
+            send_notif("Fan Lock Error", msg, "dialog-error")
+
+    def _apply_minifan(self, enable: bool):
+        """Apply mini fan curve toggle."""
+        ok, msg = set_minifancurve(enable)
+        if ok:
+            send_notif("Mini Fan Curve", msg, "computer")
+        else:
+            send_notif("Mini Fan Error", msg, "dialog-error")
+
+    def _apply_fan_curve_editor(self):
+        """Apply the custom fan curve from the editor."""
+        points = []
+        for pt in self._curve_points:
+            points.append({
+                "fan1_pwm": pt["pwm1"].value(),
+                "fan2_pwm": pt["pwm2"].value(),
+                "cpu_temp": pt["temp"].value(),
+                "accel": pt["accel"].value(),
+                "decel": pt["decel"].value(),
+            })
+        
+        ok, msg = write_fancurve_to_hw(points)
+        if ok:
+            self._status.setText(f"✓  {msg}")
+            send_notif("Fan Curve", msg, "computer")
+        else:
+            self._status.setText(f"✗  {msg}")
+            send_notif("Fan Curve Error", msg, "dialog-error")
+
+    def _save_fan_preset(self, name: str):
+        """Save current fan curve to a preset file."""
+        points = []
+        for pt in self._curve_points:
+            points.append({
+                "fan1_pwm": pt["pwm1"].value(),
+                "fan2_pwm": pt["pwm2"].value(),
+                "cpu_temp": pt["temp"].value(),
+                "accel": pt["accel"].value(),
+                "decel": pt["decel"].value(),
+            })
+        
+        if save_fancurve_to_file(points, name):
+            send_notif("Fan Curve", f"Saved preset: {name}", "computer")
+        else:
+            send_notif("Save Error", "Failed to save preset", "dialog-error")
+
+    def _load_fan_preset(self, name: str):
+        """Load a fan curve preset into the editor."""
+        points = load_fancurve_from_file(name)
+        if not points:
+            send_notif("Load Error", f"No preset found: {name}", "dialog-error")
+            return
+        
+        # Update the UI
+        for i, pt in enumerate(points[:10]):
+            if i < len(self._curve_points):
+                self._curve_points[i]["temp"].setValue(pt.get("cpu_temp", 50))
+                self._curve_points[i]["pwm1"].setValue(pt.get("fan1_pwm", 100))
+                self._curve_points[i]["pwm2"].setValue(pt.get("fan2_pwm", 100))
+                self._curve_points[i]["accel"].setValue(pt.get("accel", 5))
+                self._curve_points[i]["decel"].setValue(pt.get("decel", 5))
+        
+        send_notif("Fan Curve", f"Loaded preset: {name}", "computer")
+
     def _apply_tp_fan(self):
         level = self._tp_fan_combo.currentData()
         def _do():
@@ -5278,6 +5745,11 @@ class FanPage(QWidget):
             if mode == "auto" else
             "Both fans locked to 100% — maximum cooling, louder."
         )
+        
+        # Show/hide fan curve editor based on mode
+        if hasattr(self, '_fancurve_editor'):
+            self._fancurve_editor.setVisible(mode != "auto")
+        
         self._on_fan_result(False, f"⏳  Applying…")
 
         def _do():
@@ -5498,6 +5970,12 @@ class ActionsPage(QWidget):
         for k, b in self._mode_btns.items():
             b.setChecked(k == mode)
         self._mode_desc.setText(self._mode_hint(mode))
+        
+        # Show/hide fan curve editor based on mode
+        # Editor visible for manual or full mode (NOT auto)
+        if hasattr(self, '_fancurve_editor'):
+            self._fancurve_editor.setVisible(mode in ("manual", "full"))
+        
         self._cfg["mode"] = mode
         save_fan_config(self._cfg)
         self._update_manual_visibility(mode)
