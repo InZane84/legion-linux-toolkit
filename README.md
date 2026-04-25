@@ -246,6 +246,7 @@ Removes everything — service, udev rules, polkit, autostart, CLI. Optionally r
 - 🔄 **Fixed G-Sync toggle** — now uses correct sysfs path (`/sys/devices/.../PNP0C09:00/gsync`)
 - ⚡ Uses ToggleSwitch for better UI experience in Home page
 - 🐛 Fixed nvidia_wmi_ec_backlight reference removed from G-Sync
+- 💡 **Fixed Brightness Backlight** — now uses correct path (`/sys/class/backlight/`)
 - 🎮 Added .gitignore
 
 ---
