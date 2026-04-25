@@ -5,9 +5,9 @@
   <p>Developed on CachyOS · KDE Plasma 6 · Wayland — works on any Arch-based distro</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-v0.6.2--BETA-red?style=flat-square"/>
+    <img src="https://img.shields.io/badge/version-v0.6.3--BETA-red?style=flat-square"/>
     <a href="https://v4cachy.github.io/legion-linux-toolkit/"><img src="https://img.shields.io/badge/website-live-blue?style=flat-square"/></a>
-    <img src="https://img.shields.io/badge/build-20260419-orange?style=flat-square"/>
+    <img src="https://img.shields.io/badge/build-20260425-orange?style=flat-square"/>
     <img src="https://img.shields.io/badge/platform-Linux-blue?style=flat-square"/>
     <img src="https://img.shields.io/badge/desktop-KDE%20Plasma%206-purple?style=flat-square"/>
     <img src="https://img.shields.io/badge/python-PyQt6-green?style=flat-square"/>
@@ -238,6 +238,15 @@ sudo bash uninstall.sh
 ```
 
 Removes everything — service, udev rules, polkit, autostart, CLI. Optionally removes user config.
+
+---
+
+## 🆕 What's New (v0.6.3 — 20260425)
+
+- 🔄 **Fixed G-Sync toggle** — now uses correct sysfs path (`/sys/devices/.../PNP0C09:00/gsync`)
+- ⚡ Uses ToggleSwitch for better UI experience in Home page
+- 🐛 Fixed nvidia_wmi_ec_backlight reference removed from G-Sync
+- 🎮 Added .gitignore
 
 ---
 
